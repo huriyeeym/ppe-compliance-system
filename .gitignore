@@ -1,0 +1,124 @@
+# PPE Compliance System - .gitignore
+# Profesyonel Python & JavaScript/Node proje ignore kuralları
+
+# ==========================================
+# PYTHON
+# ==========================================
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+venv/
+env/
+ENV/
+.venv
+
+# PyCharm
+.idea/
+
+# VS Code
+.vscode/
+*.code-workspace
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# ==========================================
+# NODE / FRONTEND
+# ==========================================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Next.js
+.next/
+out/
+
+# ==========================================
+# DATA & MODELS (BÜYÜK DOSYALAR)
+# ==========================================
+# Veri setleri (GB boyutunda olabilir)
+data/datasets/**/*
+!data/datasets/**/.gitkeep
+
+# Eğitilmiş modeller (.pt dosyaları çok büyük - Git LFS kullanılacak)
+data/models/**/*.pt
+data/models/**/*.pth
+data/models/**/*.onnx
+!data/models/.gitkeep
+
+# Test videoları
+data/test_videos/**/*.mp4
+data/test_videos/**/*.avi
+
+# ==========================================
+# LOGS & TEMP FILES
+# ==========================================
+*.log
+logs/
+*.sqlite
+*.sqlite3
+*.db
+
+# ==========================================
+# OS
+# ==========================================
+# Windows
+Thumbs.db
+Desktop.ini
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Linux
+*~
+
+# ==========================================
+# ENVIRONMENT & CONFIG
+# ==========================================
+.env
+.env.local
+.env.*.local
+*.local
+
+# ==========================================
+# DOCUMENTATION (PRIVATE - Kişisel notlar)
+# ==========================================
+# README.md hariç tüm .md dosyaları GitHub'a GİTMEZ
+*.md
+!README.md
+
+# ==========================================
+# MISC
+# ==========================================
+*.swp
+*.swo
+.pytest_cache/
+.coverage
+htmlcov/
+
