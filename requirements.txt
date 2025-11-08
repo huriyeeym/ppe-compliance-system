@@ -1,5 +1,6 @@
 # PPE Compliance System - Python Dependencies
-# Python 3.9+ required
+# Python 3.11 REQUIRED (stable, production-ready)
+# Python 3.13 NOT recommended: ML libraries not fully tested
 
 # ==========================================
 # WEB FRAMEWORK
@@ -18,11 +19,11 @@ alembic==1.12.1               # Database migrations
 aiosqlite==0.19.0             # Async SQLite driver
 
 # ==========================================
-# MACHINE LEARNING
+# MACHINE LEARNING (Tested on Python 3.11)
 # ==========================================
-ultralytics==8.0.220          # YOLOv8 (PPE detection)
-torch==2.1.1                  # PyTorch (YOLO dependency)
-torchvision==0.16.1           # Vision utilities
+ultralytics==8.0.196          # YOLOv8 (PPE detection) - stable for Python 3.11
+torch==2.1.0                  # PyTorch (YOLO dependency)
+torchvision==0.16.0           # Vision utilities
 opencv-python==4.8.1.78       # Video capture, image processing
 numpy==1.24.3                 # Numerical computing
 pillow==10.1.0                # Image processing
@@ -52,8 +53,9 @@ loguru==0.7.2                 # Better logging
 # ==========================================
 # NOTES
 # ==========================================
-# - ultralytics will auto-download pre-trained models on first run
-# - torch+torchvision: Large packages (~2GB), GPU support included
-# - opencv-python: For webcam and video processing
-# - For production, consider pinning all sub-dependencies (pip freeze)
+# - Python 3.11 REQUIRED: ML kütüphaneleri bu versiyonda test edilmiş
+# - Exact versions (==): Herkes aynı ortamda çalışsın, bug riski azalsın
+# - torch+torchvision: Büyük paketler (~2GB), GPU desteği dahil
+# - opencv-python: Webcam ve video işleme için
+# - İlk kurulum: pip install -r requirements.txt (10-15 dakika sürebilir)
 
