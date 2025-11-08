@@ -32,14 +32,14 @@ app.add_middleware(
 @app.on_event("startup")
 async def startup_event():
     """Initialize on startup"""
-    print(f"🚀 Starting {settings.app_name} v{settings.app_version}")
+    print(f"[*] Starting {settings.app_name} v{settings.app_version}")
     initialize_directories()
-    print("✅ Directories initialized")
+    print("[OK] Directories initialized")
     
     # Initialize database
     from backend.database.connection import init_db
     await init_db()
-    print("✅ Database initialized")
+    print("[OK] Database initialized")
     
     # TODO: Load ML models
 
@@ -47,7 +47,7 @@ async def startup_event():
 @app.on_event("shutdown")
 async def shutdown_event():
     """Cleanup on shutdown"""
-    print("👋 Shutting down gracefully")
+    print("[*] Shutting down gracefully")
     # TODO: Close database connections
     # TODO: Cleanup resources
 

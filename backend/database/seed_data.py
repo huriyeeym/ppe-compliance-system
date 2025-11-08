@@ -333,17 +333,17 @@ def get_ppe_types_by_domain(domain_id: int):
 if __name__ == "__main__":
     # Quick stats
     stats = get_domain_count_by_status()
-    print(f"📊 Seed Data Stats:")
+    print(f"[i] Seed Data Stats:")
     print(f"  Domains: {stats['total']} (Active: {stats['active']}, Planned: {stats['planned']})")
     print(f"  PPE Types: {len(PPE_TYPES)}")
     print(f"  Domain Rules: {len(DOMAIN_PPE_RULES)}")
     
-    print("\n🏗️ Construction Domain PPE:")
+    print("\n[i] Construction Domain PPE:")
     construction_ppe = get_ppe_types_by_domain(1)
     print(f"  Required: {len(construction_ppe['required'])}")
     print(f"  Optional: {len(construction_ppe['optional'])}")
     
-    print("\n🏭 Manufacturing Domain PPE:")
+    print("\n[i] Manufacturing Domain PPE:")
     manufacturing_ppe = get_ppe_types_by_domain(2)
     print(f"  Required: {len(manufacturing_ppe['required'])}")
     print(f"  Optional: {len(manufacturing_ppe['optional'])}")

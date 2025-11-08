@@ -21,7 +21,7 @@ from backend.database.seed_data import DOMAINS, PPE_TYPES, DOMAIN_PPE_RULES
 
 async def load_seed_data():
     """Load seed data into database"""
-    print("📦 Loading seed data...")
+    print("[*] Loading seed data...")
     
     async with AsyncSessionLocal() as session:
         # Check if data already exists
@@ -30,43 +30,43 @@ async def load_seed_data():
         existing_domains = result.scalars().all()
         
         if existing_domains:
-            print("⚠️  Seed data already loaded. Skipping...")
+            print("[!] Seed data already loaded. Skipping...")
             return
         
         # Load Domains
-        print("  → Loading domains...")
+        print("  [*] Loading domains...")
         for domain_data in DOMAINS:
             domain = Domain(**domain_data)
             session.add(domain)
         await session.commit()
-        print(f"  ✅ {len(DOMAINS)} domains loaded")
+        print(f"  [OK] {len(DOMAINS)} domains loaded")
         
         # Load PPE Types
-        print("  → Loading PPE types...")
+        print("  [*] Loading PPE types...")
         for ppe_data in PPE_TYPES:
             ppe_type = PPEType(**ppe_data)
             session.add(ppe_type)
         await session.commit()
-        print(f"  ✅ {len(PPE_TYPES)} PPE types loaded")
+        print(f"  [OK] {len(PPE_TYPES)} PPE types loaded")
         
         # Load Domain PPE Rules
-        print("  → Loading domain PPE rules...")
+        print("  [*] Loading domain PPE rules...")
         for rule_data in DOMAIN_PPE_RULES:
             rule = DomainPPERule(**rule_data)
             session.add(rule)
         await session.commit()
-        print(f"  ✅ {len(DOMAIN_PPE_RULES)} domain rules loaded")
+        print(f"  [OK] {len(DOMAIN_PPE_RULES)} domain rules loaded")
 
 
 async def main():
     """Main initialization function"""
     print("=" * 60)
-    print("🏗️  PPE Compliance System - Database Initialization")
+    print("PPE Compliance System - Database Initialization")
     print("=" * 60)
     print()
     
     # Create tables
-    print("🔧 Creating database tables...")
+    print("[*] Creating database tables...")
     await init_db()
     print()
     
@@ -76,16 +76,16 @@ async def main():
     
     # Summary
     print("=" * 60)
-    print("✅ Database initialization complete!")
+    print("[OK] Database initialization complete!")
     print("=" * 60)
     print()
-    print("📊 Summary:")
-    print(f"  • Database: data/ppe_compliance.db")
-    print(f"  • Domains: {len(DOMAINS)} ({sum(1 for d in DOMAINS if d['status'].value == 'active')} active)")
-    print(f"  • PPE Types: {len(PPE_TYPES)}")
-    print(f"  • Rules: {len(DOMAIN_PPE_RULES)}")
+    print("[i] Summary:")
+    print(f"  * Database: data/ppe_compliance.db")
+    print(f"  * Domains: {len(DOMAINS)} ({sum(1 for d in DOMAINS if d['status'].value == 'active')} active)")
+    print(f"  * PPE Types: {len(PPE_TYPES)}")
+    print(f"  * Rules: {len(DOMAIN_PPE_RULES)}")
     print()
-    print("🚀 You can now start the backend:")
+    print("[i] You can now start the backend:")
     print("   python backend/main.py")
     print()
 

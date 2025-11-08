@@ -69,7 +69,8 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
-        case_sensitive=False
+        case_sensitive=False,
+        protected_namespaces=()  # Allow field names starting with 'model_'
     )
 
 
