@@ -35,7 +35,12 @@ async def startup_event():
     print(f"🚀 Starting {settings.app_name} v{settings.app_version}")
     initialize_directories()
     print("✅ Directories initialized")
-    # TODO: Initialize database
+    
+    # Initialize database
+    from backend.database.connection import init_db
+    await init_db()
+    print("✅ Database initialized")
+    
     # TODO: Load ML models
 
 
@@ -80,14 +85,15 @@ async def root():
 
 
 # ==========================================
-# API ROUTES (To be implemented)
+# API ROUTES
 # ==========================================
 
-# TODO: Include routers
-# from backend.api import domains, cameras, violations
-# app.include_router(domains.router, prefix=settings.api_v1_prefix, tags=["Domains"])
-# app.include_router(cameras.router, prefix=settings.api_v1_prefix, tags=["Cameras"])
-# app.include_router(violations.router, prefix=settings.api_v1_prefix, tags=["Violations"])
+from backend.api import domains, cameras, violations, ppe_types
+
+app.include_router(domains.router, prefix=settings.api_v1_prefix)
+app.include_router(ppe_types.router, prefix=settings.api_v1_prefix)
+app.include_router(cameras.router, prefix=settings.api_v1_prefix)
+app.include_router(violations.router, prefix=settings.api_v1_prefix)
 
 
 if __name__ == "__main__":
