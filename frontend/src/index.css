@@ -1,0 +1,70 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    @apply border-white/10;
+  }
+  
+  body {
+    @apply bg-slate-900 text-slate-50;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    background-attachment: fixed;
+  }
+  
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
+@layer utilities {
+  /* Cards - Düz renk, glow YOK */
+  .card {
+    @apply bg-slate-800 rounded-2xl p-6 shadow-lg border border-white/10;
+  }
+  
+  .card-hover {
+    @apply transition-all duration-200 hover:bg-slate-700/50 hover:shadow-xl;
+  }
+  
+  /* Buttons */
+  .btn-primary {
+    @apply bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white px-6 py-3 rounded-xl font-semibold shadow-lg shadow-purple-500/30 hover:shadow-xl hover:shadow-purple-500/40 transition-all hover:scale-[1.02];
+  }
+  
+  .btn-secondary {
+    @apply bg-transparent border border-slate-600 text-slate-200 px-6 py-3 rounded-xl font-medium hover:bg-white/5 transition-all;
+  }
+  
+  .btn-ghost {
+    @apply bg-transparent text-slate-400 px-4 py-2 rounded-lg hover:bg-white/5 transition-all;
+  }
+  
+  /* Typography */
+  .text-page-title {
+    @apply text-[28px] font-bold leading-tight text-slate-50;
+  }
+  
+  .text-section-title {
+    @apply text-xl font-semibold leading-snug text-slate-50;
+  }
+  
+  .text-body {
+    @apply text-sm leading-relaxed text-slate-300;
+  }
+  
+  .text-caption {
+    @apply text-xs leading-normal text-slate-500;
+  }
+  
+  /* Glassmorphism - Sadece özel durumlar için */
+  .glass {
+    @apply backdrop-blur-xl bg-white/5 border border-white/10;
+  }
+  
+  /* Gradient text - Sadece başlıklar için */
+  .gradient-text {
+    @apply bg-gradient-to-r from-white via-purple-200 to-pink-200 bg-clip-text text-transparent;
+  }
+}
