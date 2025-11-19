@@ -5,6 +5,7 @@ PPE Compliance System - FastAPI Application Entry Point
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from backend.config import settings, initialize_directories
+from backend.utils.logger import logger
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -32,14 +33,14 @@ app.add_middleware(
 @app.on_event("startup")
 async def startup_event():
     """Initialize on startup"""
-    print(f"[*] Starting {settings.app_name} v{settings.app_version}")
+    logger.info(f"Starting {settings.app_name} v{settings.app_version}")
     initialize_directories()
-    print("[OK] Directories initialized")
+    logger.info("Directories initialized")
     
     # Initialize database
     from backend.database.connection import init_db
     await init_db()
-    print("[OK] Database initialized")
+    logger.info("Database initialized")
     
     # TODO: Load ML models
 
@@ -47,7 +48,7 @@ async def startup_event():
 @app.on_event("shutdown")
 async def shutdown_event():
     """Cleanup on shutdown"""
-    print("[*] Shutting down gracefully")
+    logger.info("Shutting down gracefully")
     # TODO: Close database connections
     # TODO: Cleanup resources
 

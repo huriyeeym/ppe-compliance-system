@@ -48,7 +48,8 @@ class Settings(BaseSettings):
     # ==========================================
     api_v1_prefix: str = "/api/v1"
     cors_origins: list[str] = [
-        "http://localhost:3000",  # Frontend dev server
+        "http://localhost:3000",  # Frontend dev server (Next.js)
+        "http://localhost:5173",  # Frontend dev server (Vite)
         "http://localhost:8000",  # Backend docs
     ]
     

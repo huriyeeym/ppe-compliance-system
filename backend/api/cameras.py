@@ -9,6 +9,8 @@ from typing import List
 
 from backend.database.connection import get_db
 from backend.database import crud, schemas
+from backend.services.camera_service import CameraService
+from backend.utils.logger import logger
 
 
 router = APIRouter(prefix="/cameras", tags=["Cameras"])
@@ -28,10 +30,8 @@ async def get_cameras(
     - **limit**: Maximum number of records to return (default: 100)
     - **domain_id**: Filter by domain (optional)
     """
-    if domain_id:
-        cameras = await crud.get_cameras_by_domain(db, domain_id)
-    else:
-        cameras = await crud.get_cameras(db, skip=skip, limit=limit)
+    service = CameraService(db)
+    cameras = await service.get_all(skip=skip, limit=limit, domain_id=domain_id)
     return cameras
 
 
@@ -43,7 +43,8 @@ async def get_camera(
     """
     Get a specific camera by ID
     """
-    camera = await crud.get_camera_by_id(db, camera_id)
+    service = CameraService(db)
+    camera = await service.get_by_id(camera_id)
     if not camera:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -67,15 +68,14 @@ async def create_camera(
     - **is_active**: Whether camera is active
     - **location**: Optional physical location
     """
-    # Check if domain exists
-    domain = await crud.get_domain_by_id(db, camera.domain_id)
-    if not domain:
+    service = CameraService(db)
+    try:
+        return await service.create(camera)
+    except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Domain with id {camera.domain_id} not found"
+            detail=str(e)
         )
-    
-    return await crud.create_camera(db, camera)
 
 
 @router.put("/{camera_id}", response_model=schemas.CameraResponse)
@@ -89,22 +89,20 @@ async def update_camera(
     
     All fields are optional. Only provided fields will be updated.
     """
-    # If domain_id is being updated, check if it exists
-    if camera.domain_id:
-        domain = await crud.get_domain_by_id(db, camera.domain_id)
-        if not domain:
+    service = CameraService(db)
+    try:
+        updated_camera = await service.update(camera_id, camera)
+        if not updated_camera:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Domain with id {camera.domain_id} not found"
+                detail=f"Camera with id {camera_id} not found"
             )
-    
-    updated_camera = await crud.update_camera(db, camera_id, camera)
-    if not updated_camera:
+        return updated_camera
+    except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Camera with id {camera_id} not found"
+            detail=str(e)
         )
-    return updated_camera
 
 
 @router.delete("/{camera_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -117,7 +115,8 @@ async def delete_camera(
     
     **Warning:** This will also delete all violations from this camera!
     """
-    success = await crud.delete_camera(db, camera_id)
+    service = CameraService(db)
+    success = await service.delete(camera_id)
     if not success:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

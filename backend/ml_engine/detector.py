@@ -9,6 +9,7 @@ import numpy as np
 from ultralytics import YOLO
 
 from backend.config import settings
+from backend.utils.logger import logger
 
 
 class PPEDetector:
@@ -38,9 +39,9 @@ class PPEDetector:
         # Load YOLO model
         self.model = self._load_model()
         
-        print(f"✅ PPE Detector initialized")
-        print(f"   Model: {self.model_path}")
-        print(f"   Confidence threshold: {self.confidence_threshold}")
+        logger.info("PPE Detector initialized")
+        logger.info(f"Model: {self.model_path}")
+        logger.info(f"Confidence threshold: {self.confidence_threshold}")
     
     def _get_default_model_path(self) -> Path:
         """Get default model path from config"""
@@ -48,8 +49,8 @@ class PPEDetector:
         
         # If model doesn't exist, use pre-trained YOLOv8
         if not model_file.exists():
-            print(f"⚠️  Custom model not found: {model_file}")
-            print(f"   Using YOLOv8 pre-trained model (will download if needed)")
+            logger.warning(f"Custom model not found: {model_file}")
+            logger.info("Using YOLOv8 pre-trained model (will download if needed)")
             return "yolov8n.pt"  # Nano model (fastest)
         
         return str(model_file)
@@ -60,8 +61,8 @@ class PPEDetector:
             model = YOLO(self.model_path)
             return model
         except Exception as e:
-            print(f"❌ Failed to load model: {e}")
-            print(f"   Falling back to YOLOv8 pre-trained")
+            logger.error(f"Failed to load model: {e}")
+            logger.info("Falling back to YOLOv8 pre-trained")
             return YOLO("yolov8n.pt")
     
     def detect(self, frame: np.ndarray) -> List[Dict]:

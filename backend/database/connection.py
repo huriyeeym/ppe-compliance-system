@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sess
 from sqlalchemy.pool import NullPool
 from backend.config import settings
 from backend.database.models import Base
+from backend.utils.logger import logger
 
 
 # Create async engine
@@ -31,9 +32,10 @@ async def init_db():
     Initialize database - create all tables
     Call this on application startup
     """
+    logger.info("Initializing database...")
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    print("[OK] Database tables created")
+    logger.info("Database tables created successfully")
 
 
 async def get_db() -> AsyncSession:

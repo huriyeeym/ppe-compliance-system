@@ -9,6 +9,9 @@ from typing import List
 
 from backend.database.connection import get_db
 from backend.database import crud, schemas
+from backend.services.domain_service import DomainService
+from backend.services.ppe_type_service import PPETypeService
+from backend.utils.logger import logger
 
 
 router = APIRouter(prefix="/domains", tags=["Domains"])
@@ -26,7 +29,8 @@ async def get_domains(
     - **skip**: Number of records to skip (default: 0)
     - **limit**: Maximum number of records to return (default: 100)
     """
-    domains = await crud.get_domains(db, skip=skip, limit=limit)
+    service = DomainService(db)
+    domains = await service.get_all(skip=skip, limit=limit)
     return domains
 
 
@@ -38,7 +42,8 @@ async def get_domain(
     """
     Get a specific domain by ID
     """
-    domain = await crud.get_domain_by_id(db, domain_id)
+    service = DomainService(db)
+    domain = await service.get_by_id(domain_id)
     if not domain:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -61,15 +66,14 @@ async def create_domain(
     - **description**: Optional description
     - **status**: Domain status (active/planned)
     """
-    # Check if type already exists
-    existing = await crud.get_domain_by_type(db, domain.type)
-    if existing:
+    service = DomainService(db)
+    try:
+        return await service.create(domain)
+    except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Domain with type '{domain.type}' already exists"
+            detail=str(e)
         )
-    
-    return await crud.create_domain(db, domain)
 
 
 @router.put("/{domain_id}", response_model=schemas.DomainResponse)
@@ -83,7 +87,8 @@ async def update_domain(
     
     All fields are optional. Only provided fields will be updated.
     """
-    updated_domain = await crud.update_domain(db, domain_id, domain)
+    service = DomainService(db)
+    updated_domain = await service.update(domain_id, domain)
     if not updated_domain:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -102,7 +107,8 @@ async def delete_domain(
     
     **Warning:** This will cascade delete all related cameras and violations!
     """
-    success = await crud.delete_domain(db, domain_id)
+    service = DomainService(db)
+    success = await service.delete(domain_id)
     if not success:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -121,15 +127,15 @@ async def get_domain_rules(
     
     Returns the list of required/optional PPE items for this domain
     """
-    # Check if domain exists
-    domain = await crud.get_domain_by_id(db, domain_id)
+    service = DomainService(db)
+    domain = await service.get_by_id(domain_id)
     if not domain:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Domain with id {domain_id} not found"
         )
     
-    rules = await crud.get_domain_rules(db, domain_id)
+    rules = await service.get_rules(domain_id)
     return rules
 
 
@@ -151,7 +157,8 @@ async def create_domain_rule(
         )
     
     # Check if domain exists
-    domain = await crud.get_domain_by_id(db, domain_id)
+    service = DomainService(db)
+    domain = await service.get_by_id(domain_id)
     if not domain:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -159,7 +166,8 @@ async def create_domain_rule(
         )
     
     # Check if PPE type exists
-    ppe_type = await crud.get_ppe_type_by_id(db, rule.ppe_type_id)
+    ppe_type_service = PPETypeService(db)
+    ppe_type = await ppe_type_service.get_by_id(rule.ppe_type_id)
     if not ppe_type:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

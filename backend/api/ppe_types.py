@@ -9,6 +9,8 @@ from typing import List
 
 from backend.database.connection import get_db
 from backend.database import crud, schemas
+from backend.services.ppe_type_service import PPETypeService
+from backend.utils.logger import logger
 
 
 router = APIRouter(prefix="/ppe-types", tags=["PPE Types"])
@@ -26,7 +28,8 @@ async def get_ppe_types(
     - **skip**: Number of records to skip (default: 0)
     - **limit**: Maximum number of records to return (default: 100)
     """
-    ppe_types = await crud.get_ppe_types(db, skip=skip, limit=limit)
+    service = PPETypeService(db)
+    ppe_types = await service.get_all(skip=skip, limit=limit)
     return ppe_types
 
 
@@ -38,7 +41,8 @@ async def get_ppe_type(
     """
     Get a specific PPE type by ID
     """
-    ppe_type = await crud.get_ppe_type_by_id(db, ppe_type_id)
+    service = PPETypeService(db)
+    ppe_type = await service.get_by_id(ppe_type_id)
     if not ppe_type:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -61,7 +65,8 @@ async def create_ppe_type(
     - **model_class_name**: YOLO model class name (optional)
     - **status**: active or planned
     """
-    return await crud.create_ppe_type(db, ppe_type)
+    service = PPETypeService(db)
+    return await service.create(ppe_type)
 
 
 @router.put("/{ppe_type_id}", response_model=schemas.PPETypeResponse)
@@ -75,7 +80,8 @@ async def update_ppe_type(
     
     All fields are optional. Only provided fields will be updated.
     """
-    updated_ppe_type = await crud.update_ppe_type(db, ppe_type_id, ppe_type)
+    service = PPETypeService(db)
+    updated_ppe_type = await service.update(ppe_type_id, ppe_type)
     if not updated_ppe_type:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

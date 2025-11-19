@@ -6,6 +6,7 @@ Maps domains to their trained models
 from pathlib import Path
 from typing import Dict, Optional
 from backend.config import settings
+from backend.utils.logger import logger
 
 
 class ModelRegistry:
@@ -59,8 +60,8 @@ class ModelRegistry:
             Path to model file, or None if not found
         """
         if domain_type not in self._registry:
-            print(f"⚠️  No model registered for domain: {domain_type}")
-            print(f"   Using default YOLOv8 model")
+            logger.warning(f"No model registered for domain: {domain_type}")
+            logger.info("Using default YOLOv8 model")
             return None
         
         model_file = self._registry[domain_type]
@@ -68,8 +69,8 @@ class ModelRegistry:
         
         # Check if custom model exists
         if not model_path.exists() and not model_file.startswith("yolov8"):
-            print(f"⚠️  Model file not found: {model_path}")
-            print(f"   Falling back to YOLOv8 pre-trained")
+            logger.warning(f"Model file not found: {model_path}")
+            logger.info("Falling back to YOLOv8 pre-trained")
             return None
         
         return model_path if model_path.exists() else model_file
@@ -83,7 +84,7 @@ class ModelRegistry:
             model_file: Model filename (relative to models_dir)
         """
         self._registry[domain_type] = model_file
-        print(f"✅ Registered model '{model_file}' for domain '{domain_type}'")
+        logger.info(f"Registered model '{model_file}' for domain '{domain_type}'")
     
     def list_domains(self) -> Dict[str, str]:
         """Get all registered domain → model mappings"""

@@ -11,6 +11,8 @@ from datetime import datetime
 from backend.database.connection import get_db
 from backend.database import crud, schemas
 from backend.database.models import ViolationSeverity
+from backend.services.violation_service import ViolationService
+from backend.utils.logger import logger
 
 
 router = APIRouter(prefix="/violations", tags=["Violations"])
@@ -57,7 +59,9 @@ async def get_violations(
         limit=limit
     )
     
-    violations, total = await crud.get_violations(db, filters)
+    # Use service layer instead of direct CRUD
+    service = ViolationService(db)
+    violations, total = await service.get_violations(filters)
     
     return schemas.PaginatedResponse(
         total=total,
@@ -82,7 +86,8 @@ async def get_violation_statistics(
     - acknowledged: Number of acknowledged violations
     - pending: Number of pending violations
     """
-    stats = await crud.get_violation_stats(db, domain_id, start_date, end_date)
+    service = ViolationService(db)
+    stats = await service.get_statistics(domain_id, start_date, end_date)
     return stats
 
 
@@ -94,7 +99,8 @@ async def get_violation(
     """
     Get a specific violation by ID
     """
-    violation = await crud.get_violation_by_id(db, violation_id)
+    service = ViolationService(db)
+    violation = await service.get_violation_by_id(violation_id)
     if not violation:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -121,23 +127,16 @@ async def create_violation(
     - **missing_ppe**: List of missing PPE items
     - **confidence**: Detection confidence (0.0 - 1.0)
     """
-    # Validate camera exists
-    camera = await crud.get_camera_by_id(db, violation.camera_id)
-    if not camera:
+    # Use service layer for business logic
+    service = ViolationService(db)
+    try:
+        return await service.create_violation(violation)
+    except ValueError as e:
+        # Service layer validation errors
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Camera with id {violation.camera_id} not found"
+            detail=str(e)
         )
-    
-    # Validate domain exists
-    domain = await crud.get_domain_by_id(db, violation.domain_id)
-    if not domain:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Domain with id {violation.domain_id} not found"
-        )
-    
-    return await crud.create_violation(db, violation)
 
 
 @router.put("/{violation_id}", response_model=schemas.ViolationResponse)
@@ -154,7 +153,8 @@ async def update_violation(
     - **acknowledged_by**: Username of person who acknowledged
     - **notes**: Add notes about the violation
     """
-    updated_violation = await crud.update_violation(db, violation_id, violation)
+    service = ViolationService(db)
+    updated_violation = await service.update_violation(violation_id, violation)
     if not updated_violation:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -175,13 +175,12 @@ async def acknowledge_violation(
     
     This is a convenience endpoint equivalent to PUT with acknowledged=True
     """
-    update_data = schemas.ViolationUpdate(
-        acknowledged=True,
-        acknowledged_by=acknowledged_by,
-        notes=notes
+    service = ViolationService(db)
+    updated_violation = await service.acknowledge_violation(
+        violation_id,
+        acknowledged_by,
+        notes
     )
-    
-    updated_violation = await crud.update_violation(db, violation_id, update_data)
     if not updated_violation:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

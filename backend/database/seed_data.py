@@ -4,6 +4,7 @@ Loads initial domains, PPE types, and rules
 """
 
 from backend.database.models import Domain, PPEType, DomainPPERule, DomainStatus
+from backend.utils.logger import logger
 
 # ==========================================
 # DOMAINS (5 total: 2 active, 3 planned)
@@ -333,18 +334,18 @@ def get_ppe_types_by_domain(domain_id: int):
 if __name__ == "__main__":
     # Quick stats
     stats = get_domain_count_by_status()
-    print(f"[i] Seed Data Stats:")
-    print(f"  Domains: {stats['total']} (Active: {stats['active']}, Planned: {stats['planned']})")
-    print(f"  PPE Types: {len(PPE_TYPES)}")
-    print(f"  Domain Rules: {len(DOMAIN_PPE_RULES)}")
+    logger.info("Seed Data Stats:")
+    logger.info(f"  Domains: {stats['total']} (Active: {stats['active']}, Planned: {stats['planned']})")
+    logger.info(f"  PPE Types: {len(PPE_TYPES)}")
+    logger.info(f"  Domain Rules: {len(DOMAIN_PPE_RULES)}")
     
-    print("\n[i] Construction Domain PPE:")
+    logger.info("Construction Domain PPE:")
     construction_ppe = get_ppe_types_by_domain(1)
-    print(f"  Required: {len(construction_ppe['required'])}")
-    print(f"  Optional: {len(construction_ppe['optional'])}")
+    logger.info(f"  Required: {len(construction_ppe['required'])}")
+    logger.info(f"  Optional: {len(construction_ppe['optional'])}")
     
-    print("\n[i] Manufacturing Domain PPE:")
+    logger.info("Manufacturing Domain PPE:")
     manufacturing_ppe = get_ppe_types_by_domain(2)
-    print(f"  Required: {len(manufacturing_ppe['required'])}")
-    print(f"  Optional: {len(manufacturing_ppe['optional'])}")
+    logger.info(f"  Required: {len(manufacturing_ppe['required'])}")
+    logger.info(f"  Optional: {len(manufacturing_ppe['optional'])}")
 

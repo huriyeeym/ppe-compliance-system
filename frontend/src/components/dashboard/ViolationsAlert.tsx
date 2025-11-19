@@ -1,105 +1,189 @@
-export default function ViolationsAlert() {
-  const alerts = [
-    { id: 1, type: 'hard hat', icon: '🔨', time: '3:30 PM', area: 'Area 1' },
-    { id: 2, type: 'vest', icon: '🦺', time: '12:30 PM', area: 'Area 2' },
-    { id: 3, type: 'vest', icon: '🦺', time: '12:45 PM', area: 'Area 1' },
-    { id: 4, type: 'hard hat', icon: '🔨', time: '11:30 AM', area: 'Area 3' },
-  ]
+import { useState, useEffect } from 'react'
+import { violationService, type Violation } from '../../lib/api/services'
+import { domainService } from '../../lib/api/services'
+import { logger } from '../../lib/utils/logger'
 
-  const logs = [
-    { id: 1, type: 'vest', time: '1:30 PM', area: 'Area 1' },
-    { id: 2, type: 'vest', time: '1:10 PM', area: 'Area 2' },
-    { id: 3, type: 'vest', time: '1:00 PM', area: 'Area 2' },
-    { id: 4, type: 'hard hat', time: '11:30 AM', area: 'Area 1' },
-    { id: 5, type: 'vest', time: '10:40 AM', area: 'Area 3' },
-    { id: 6, type: 'vest', time: '9:49 AM', area: 'Area 1' },
-  ]
+interface ViolationsAlertProps {
+  domainId?: string
+}
 
-  return (
-    <div className="space-y-6">
-      {/* Violations Alert */}
-      <div className="card">
-        <h3 className="text-section-title mb-4">Violations Alert</h3>
-        <div className="space-y-2">
-          {alerts.map((alert) => (
-            <div
-              key={alert.id}
-              className="flex items-center justify-between p-3 bg-slate-900/50 rounded-lg hover:bg-slate-900/70 transition-colors"
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-slate-800 rounded-lg flex items-center justify-center text-xl">
-                  {alert.icon}
-                </div>
-                <div>
-                  <p className="text-body font-medium">{alert.type}</p>
-                  <p className="text-caption text-slate-500">{alert.time}</p>
-                </div>
-              </div>
-              <button className="btn-ghost text-xs px-3 py-1">
-                View
-              </button>
-            </div>
-          ))}
-        </div>
+/**
+ * İnşaat Alanı İhlal Uyarıları
+ * 
+ * Gerçek kullanım:
+ * - API'den son 10 ihlali çeker
+ * - Real-time güncelleme (her 30 saniyede bir)
+ * - Domain ID'ye göre filtreleme
+ */
+export default function ViolationsAlert({ domainId }: ViolationsAlertProps) {
+  const [alerts, setAlerts] = useState<Violation[]>([])
+  const [logs, setLogs] = useState<Violation[]>([])
+  const [loading, setLoading] = useState(true)
 
-        {/* Person ID Filters */}
-        <div className="mt-4 pt-4 border-t border-slate-700">
-          <div className="space-y-2">
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 bg-yellow-500/20 rounded-full flex items-center justify-center text-yellow-400 text-sm">
-                🔨
-              </div>
-              <input
-                type="text"
-                placeholder="Person ID:"
-                className="flex-1 bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-body placeholder-slate-500 focus:outline-none focus:border-purple-500"
-              />
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 bg-blue-500/20 rounded-full flex items-center justify-center text-blue-400 text-sm">
-                😷
-              </div>
-              <input
-                type="text"
-                placeholder="Person ID:"
-                className="flex-1 bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-body placeholder-slate-500 focus:outline-none focus:border-purple-500"
-              />
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 bg-green-500/20 rounded-full flex items-center justify-center text-green-400 text-sm">
-                🦺
-              </div>
-              <input
-                type="text"
-                placeholder="Person ID:"
-                className="flex-1 bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-body placeholder-slate-500 focus:outline-none focus:border-purple-500"
-              />
-            </div>
+  useEffect(() => {
+    if (!domainId) return
+
+    const loadViolations = async () => {
+      try {
+        setLoading(true)
+        // Domain ID'yi bul (type'dan ID'ye çevir)
+        const domains = await domainService.getActive()
+        const domain = domains.find(d => d.type === domainId)
+        if (!domain) {
+          logger.warn('Domain not found', { domainType: domainId })
+          return
+        }
+
+        logger.debug('Loading violations', { domainId: domain.id })
+
+        // Son 10 ihlali çek (onaylanmamış, kritik)
+        const response = await violationService.getAll({
+          domain_id: domain.id,
+          acknowledged: false,
+          severity: 'critical',
+          limit: 10,
+        })
+
+        setAlerts(response.items)
+        logger.debug('Alerts loaded', { count: response.items.length })
+
+        // İhlal geçmişi (tüm ihlaller, son 20)
+        const logsResponse = await violationService.getAll({
+          domain_id: domain.id,
+          limit: 20,
+        })
+        setLogs(logsResponse.items)
+        logger.debug('Violation logs loaded', { count: logsResponse.items.length })
+      } catch (err) {
+        logger.error('İhlal yükleme hatası', err)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    loadViolations()
+
+    // Her 30 saniyede bir yenile
+    const interval = setInterval(loadViolations, 30000)
+    return () => clearInterval(interval)
+  }, [domainId])
+
+  const getPPEIcon = (type: string) => {
+    const icons: Record<string, string> = {
+      hard_hat: '🔨',
+      safety_vest: '🦺',
+      safety_glasses: '🥽',
+      face_mask: '😷',
+      safety_boots: '👢',
+      gloves: '🧤',
+    }
+    return icons[type] || '⚠️'
+  }
+
+  const getPPEDisplayName = (type: string) => {
+    const names: Record<string, string> = {
+      hard_hat: 'Baret',
+      safety_vest: 'Yelek',
+      safety_glasses: 'Gözlük',
+      face_mask: 'Maske',
+      safety_boots: 'Bot',
+      gloves: 'Eldiven',
+    }
+    return names[type] || type
+  }
+
+  const formatTime = (timestamp: string) => {
+    const date = new Date(timestamp)
+    return date.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
+  }
+
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <div className="card">
+          <div className="animate-pulse space-y-2">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="h-20 bg-slate-700 rounded-lg"></div>
+            ))}
           </div>
         </div>
       </div>
+    )
+  }
 
-      {/* Violations Log */}
+  return (
+    <div className="space-y-6">
+      {/* Son İhlaller - Real-time */}
       <div className="card">
-        <h3 className="text-section-title mb-4">Violations Log</h3>
-        <div className="space-y-1 max-h-96 overflow-y-auto">
-          {logs.map((log) => (
-            <div
-              key={log.id}
-              className="flex items-center justify-between p-2 hover:bg-slate-900/50 rounded transition-colors"
-            >
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 bg-slate-800 rounded-lg flex items-center justify-center text-sm">
-                  {log.type === 'vest' ? '🦺' : '🔨'}
-                </div>
-                <div>
-                  <p className="text-body">{log.type}</p>
-                  <p className="text-caption text-slate-500">{log.area}</p>
-                </div>
-              </div>
-              <p className="text-caption text-slate-500">{log.time}</p>
+        <h3 className="text-section-title mb-4">Son İhlaller</h3>
+        <div className="space-y-2">
+          {alerts.length === 0 ? (
+            <div className="text-center py-8 text-slate-500">
+              <div className="text-3xl mb-2 opacity-30">✅</div>
+              <p className="text-body">Son 24 saatte ihlal yok</p>
             </div>
-          ))}
+          ) : (
+            alerts.map((alert) => (
+              <div
+                key={alert.id}
+                className="flex items-start justify-between p-3 bg-slate-900/50 rounded-lg hover:bg-slate-900/70 transition-colors border-l-4 border-red-500"
+              >
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 mb-1">
+                    {alert.missing_ppe.map((ppe, idx) => (
+                      <span key={idx} className="text-lg">
+                        {getPPEIcon(ppe.type)}
+                      </span>
+                    ))}
+                    <span className="px-2 py-0.5 bg-red-500/20 text-red-400 rounded text-xs font-medium">
+                      {alert.severity === 'critical' ? 'Kritik' : alert.severity === 'high' ? 'Yüksek' : 'Orta'}
+                    </span>
+                  </div>
+                  <p className="text-body font-medium">
+                    {alert.missing_ppe.map(ppe => getPPEDisplayName(ppe.type)).join(', ')} eksik
+                  </p>
+                  <p className="text-caption text-slate-500">
+                    Kamera #{alert.camera_id} • {formatTime(alert.timestamp)}
+                  </p>
+                </div>
+                <button className="btn-ghost text-xs px-3 py-1 ml-2">
+                  Detay
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+
+      {/* İhlal Geçmişi */}
+      <div className="card">
+        <h3 className="text-section-title mb-4">İhlal Geçmişi</h3>
+        <div className="space-y-1 max-h-96 overflow-y-auto">
+          {logs.length === 0 ? (
+            <div className="text-center py-8 text-slate-500">
+              <p className="text-body">Geçmiş ihlal yok</p>
+            </div>
+          ) : (
+            logs.map((log) => (
+              <div
+                key={log.id}
+                className="flex items-center justify-between p-2 hover:bg-slate-900/50 rounded transition-colors"
+              >
+                <div className="flex items-center gap-2">
+                  <div className="text-lg">
+                    {log.missing_ppe[0] && getPPEIcon(log.missing_ppe[0].type)}
+                  </div>
+                  <div>
+                    <p className="text-body">
+                      {log.missing_ppe[0] && getPPEDisplayName(log.missing_ppe[0].type)}
+                    </p>
+                    <p className="text-caption text-slate-500">Kamera #{log.camera_id}</p>
+                  </div>
+                </div>
+                <p className="text-caption text-slate-500">{formatTime(log.timestamp)}</p>
+              </div>
+            ))
+          )}
         </div>
       </div>
     </div>
