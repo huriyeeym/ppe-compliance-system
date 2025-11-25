@@ -27,6 +27,7 @@ torchvision==0.16.0           # Vision utilities
 opencv-python==4.8.1.78       # Video capture, image processing
 numpy==1.24.3                 # Numerical computing
 pillow==10.1.0                # Image processing
+onnxruntime==1.16.3           # ONNX Runtime for optimized inference (2-3x speedup)
 
 # ==========================================
 # UTILITIES
