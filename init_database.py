@@ -16,6 +16,7 @@ from backend.database.connection import engine, AsyncSessionLocal
 from backend.database import models
 from backend.database.seed_data import DOMAINS, PPE_TYPES, DOMAIN_PPE_RULES
 from backend.utils.logger import logger
+from backend.services.user_service import UserService
 
 
 async def init_database():
@@ -109,6 +110,12 @@ async def init_database():
             logger.info(f"  Rules: {len(DOMAIN_PPE_RULES)}")
             logger.info(f"  Cameras: {camera_count}")
             logger.info("")
+            # Ensure default admin user exists
+            logger.info("Ensuring default admin user...")
+            user_service = UserService(db)
+            admin = await user_service.ensure_default_admin()
+            logger.info(f"  Admin user: {admin.email} / admin123")
+
             logger.info("Next steps:")
             logger.info("  1. Start backend: python backend/main.py")
             logger.info("  2. Start frontend: cd frontend && npm run dev")

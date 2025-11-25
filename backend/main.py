@@ -89,13 +89,15 @@ async def root():
 # API ROUTES
 # ==========================================
 
-from backend.api import domains, cameras, violations, ppe_types, detection
+from backend.api import domains, cameras, violations, ppe_types, detection, auth, users
 
 app.include_router(domains.router, prefix=settings.api_v1_prefix)
 app.include_router(ppe_types.router, prefix=settings.api_v1_prefix)
 app.include_router(cameras.router, prefix=settings.api_v1_prefix)
 app.include_router(violations.router, prefix=settings.api_v1_prefix)
 app.include_router(detection.router, prefix=settings.api_v1_prefix)
+app.include_router(auth.router, prefix=settings.api_v1_prefix)
+app.include_router(users.router, prefix=settings.api_v1_prefix)
 
 
 if __name__ == "__main__":

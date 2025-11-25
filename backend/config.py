@@ -49,7 +49,9 @@ class Settings(BaseSettings):
     api_v1_prefix: str = "/api/v1"
     cors_origins: list[str] = [
         "http://localhost:3000",  # Frontend dev server (Next.js)
-        "http://localhost:5173",  # Frontend dev server (Vite)
+        "http://localhost:5173",  # Frontend dev server (Vite default)
+        "http://localhost:5174",  # Vite fallback port
+        "http://localhost:5175",  # Extra dev slot
         "http://localhost:8000",  # Backend docs
     ]
     
@@ -58,6 +60,7 @@ class Settings(BaseSettings):
     # ==========================================
     secret_key: str = "CHANGE_THIS_IN_PRODUCTION"  # For JWT
     access_token_expire_minutes: int = 30
+    jwt_algorithm: str = "HS256"
     
     # ==========================================
     # PATHS

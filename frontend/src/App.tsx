@@ -6,6 +6,8 @@ import Report from './pages/Report'
 import Analytics from './pages/Analytics'
 import Configure from './pages/Configure'
 import Admin from './pages/Admin'
+import Login from './pages/Login'
+import RequireAuth from './components/auth/RequireAuth'
 
 function App() {
   return (
@@ -17,7 +19,15 @@ function App() {
           <Route path="/report" element={<Report />} />
           <Route path="/analytics" element={<Analytics />} />
           <Route path="/configure" element={<Configure />} />
-          <Route path="/admin" element={<Admin />} />
+          <Route
+            path="/admin"
+            element={
+              <RequireAuth role="admin">
+                <Admin />
+              </RequireAuth>
+            }
+          />
+          <Route path="/login" element={<Login />} />
         </Routes>
       </Layout>
     </BrowserRouter>

@@ -1,8 +1,10 @@
 import { Link, useLocation } from 'react-router-dom'
+import { useAuth } from '../../context/AuthContext'
 
 export default function Sidebar() {
   const location = useLocation()
   const activePath = location.pathname
+  const { user, logout } = useAuth()
 
   const menuItems = [
     { path: '/', label: 'Dashboard', icon: '🏠' },
@@ -10,8 +12,10 @@ export default function Sidebar() {
     { path: '/report', label: 'Report', icon: '📋' },
     { path: '/analytics', label: 'Analytics', icon: '📊' },
     { path: '/configure', label: 'Configure', icon: '⚙️' },
-    { path: '/admin', label: 'Admin', icon: '👑' },
   ]
+  if (user?.role === 'admin') {
+    menuItems.push({ path: '/admin', label: 'Admin', icon: '👑' })
+  }
 
   return (
     <aside className="w-56 bg-slate-800 border-r border-slate-700 flex flex-col">
@@ -57,15 +61,29 @@ export default function Sidebar() {
 
       {/* User Profile */}
       <div className="p-3 border-t border-slate-700">
-        <button className="w-full flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-slate-700/50 transition-all">
-          <div className="w-8 h-8 bg-pink-500 rounded-full flex items-center justify-center text-white text-sm font-semibold">
-            U
+        {user ? (
+          <div className="flex flex-col gap-2">
+            <div className="w-full flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-800/60">
+              <div className="w-8 h-8 bg-pink-500 rounded-full flex items-center justify-center text-white text-sm font-semibold">
+                {user.full_name.charAt(0).toUpperCase()}
+              </div>
+              <div className="flex-1 text-left">
+                <p className="text-xs font-medium text-slate-50">{user.full_name}</p>
+                <p className="text-[10px] text-slate-500">{user.role === 'admin' ? 'Admin' : 'Operator'}</p>
+              </div>
+            </div>
+            <button
+              onClick={logout}
+              className="btn-ghost w-full text-xs"
+            >
+              Çıkış Yap
+            </button>
           </div>
-          <div className="flex-1 text-left">
-            <p className="text-xs font-medium text-slate-50">User</p>
-            <p className="text-[10px] text-slate-500">Settings</p>
-          </div>
-        </button>
+        ) : (
+          <Link to="/login" className="btn-primary w-full text-center text-sm">
+            Giriş Yap
+          </Link>
+        )}
       </div>
     </aside>
   )

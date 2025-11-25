@@ -42,6 +42,12 @@ class ViolationSeverity(str, Enum):
     LOW = "low"
 
 
+class UserRole(str, Enum):
+    """Application user roles"""
+    ADMIN = "admin"
+    OPERATOR = "operator"
+
+
 # ==========================================
 # MODELS
 # ==========================================
@@ -196,4 +202,23 @@ class DetectionLog(Base):
     
     def __repr__(self):
         return f"<DetectionLog(camera_id={self.camera_id}, timestamp='{self.timestamp}')>"
+
+
+class User(Base):
+    """
+    Application user for authentication/authorization
+    """
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String(100), unique=True, nullable=False, index=True)
+    full_name = Column(String(100), nullable=False)
+    hashed_password = Column(String(255), nullable=False)
+    role = Column(SQLEnum(UserRole), default=UserRole.OPERATOR, nullable=False)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    last_login = Column(DateTime, nullable=True)
+
+    def __repr__(self):
+        return f"<User(id={self.id}, email='{self.email}', role='{self.role}')>"
 

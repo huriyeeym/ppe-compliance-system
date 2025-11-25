@@ -3,10 +3,10 @@ Pydantic schemas for request/response validation
 Separate from SQLAlchemy models for clean API layer
 """
 
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, EmailStr
 from typing import Optional, List
 from datetime import datetime
-from backend.database.models import DomainStatus, SourceType, ViolationSeverity
+from backend.database.models import DomainStatus, SourceType, ViolationSeverity, UserRole
 
 
 # ==========================================
@@ -212,4 +212,57 @@ class PaginatedResponse(BaseModel):
     skip: int = Field(..., description="Number of items skipped")
     limit: int = Field(..., description="Number of items per page")
     items: List = Field(..., description="List of items")
+
+
+# ==========================================
+# USER & AUTH SCHEMAS
+# ==========================================
+
+
+class UserBase(BaseModel):
+    """Shared user fields"""
+    email: EmailStr
+    full_name: str = Field(..., min_length=2, max_length=100)
+    role: UserRole = UserRole.OPERATOR
+    is_active: bool = True
+
+
+class UserCreate(UserBase):
+    """Schema for user creation"""
+    password: str = Field(..., min_length=6, max_length=100)
+
+
+class UserUpdate(BaseModel):
+    """Schema for updating a user"""
+    full_name: Optional[str] = Field(None, min_length=2, max_length=100)
+    password: Optional[str] = Field(None, min_length=6, max_length=100)
+    role: Optional[UserRole] = None
+    is_active: Optional[bool] = None
+
+
+class UserResponse(UserBase):
+    """Response schema for user"""
+    id: int
+    created_at: datetime
+    last_login: Optional[datetime]
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class Token(BaseModel):
+    """JWT token response"""
+    access_token: str
+    token_type: str = "bearer"
+
+
+class TokenResponse(Token):
+    """Token + user payload"""
+    user: UserResponse
+
+
+class TokenPayload(BaseModel):
+    """Payload stored inside JWT"""
+    sub: int
+    role: UserRole
+    exp: int
 

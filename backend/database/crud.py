@@ -9,7 +9,7 @@ from typing import List, Optional
 from datetime import datetime
 
 from backend.database.models import (
-    Domain, PPEType, DomainPPERule, Camera, Violation, DetectionLog
+    Domain, PPEType, DomainPPERule, Camera, Violation, DetectionLog, User
 )
 from backend.database.schemas import (
     DomainCreate, DomainUpdate,
@@ -17,7 +17,8 @@ from backend.database.schemas import (
     DomainPPERuleCreate, DomainPPERuleUpdate,
     CameraCreate, CameraUpdate,
     ViolationCreate, ViolationUpdate,
-    ViolationFilterParams
+    ViolationFilterParams,
+    UserCreate, UserUpdate
 )
 
 
@@ -345,4 +346,61 @@ async def get_violation_stats(
         "acknowledged": acknowledged,
         "pending": total_violations - acknowledged
     }
+
+
+# ==========================================
+# USER CRUD
+# ==========================================
+
+
+async def get_user_by_email(db: AsyncSession, email: str) -> Optional[User]:
+    """Get user by email"""
+    result = await db.execute(select(User).where(User.email == email))
+    return result.scalar_one_or_none()
+
+
+async def get_user(db: AsyncSession, user_id: int) -> Optional[User]:
+    """Get user by ID"""
+    result = await db.execute(select(User).where(User.id == user_id))
+    return result.scalar_one_or_none()
+
+
+async def get_users(db: AsyncSession, skip: int = 0, limit: int = 100) -> List[User]:
+    """List users"""
+    result = await db.execute(
+        select(User).offset(skip).limit(limit).order_by(User.id)
+    )
+    return result.scalars().all()
+
+
+async def create_user(db: AsyncSession, user: UserCreate, hashed_password: str) -> User:
+    """Create new user"""
+    db_user = User(
+        email=user.email.lower(),
+        full_name=user.full_name,
+        hashed_password=hashed_password,
+        role=user.role,
+        is_active=user.is_active,
+    )
+    db.add(db_user)
+    await db.commit()
+    await db.refresh(db_user)
+    return db_user
+
+
+async def update_user(db: AsyncSession, user_id: int, user: UserUpdate, hashed_password: Optional[str] = None) -> Optional[User]:
+    """Update existing user"""
+    db_user = await get_user(db, user_id)
+    if not db_user:
+        return None
+
+    update_data = user.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(db_user, key, value)
+    if hashed_password:
+        db_user.hashed_password = hashed_password
+
+    await db.commit()
+    await db.refresh(db_user)
+    return db_user
 
