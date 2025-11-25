@@ -19,6 +19,7 @@ import { logger } from '../lib/utils/logger'
 export default function Dashboard() {
   const [selectedDomain, setSelectedDomain] = useState<Domain | null>(null)
   const [selectedCamera, setSelectedCamera] = useState<Camera | null>(null)
+  const [cameras, setCameras] = useState<Camera[]>([])
   const [isStreaming, setIsStreaming] = useState(false)
   const [stats, setStats] = useState<ViolationStatistics>({
     total: 0,
@@ -62,9 +63,10 @@ export default function Dashboard() {
     const loadCameras = async () => {
       try {
         logger.info('Loading cameras for domain', { domainId: selectedDomain.id })
-        const cameras = await cameraService.getAll(selectedDomain.id)
+        const cameraList = await cameraService.getAll(selectedDomain.id)
+        setCameras(cameraList)
         // İlk aktif kamerayı seç
-        const activeCamera = cameras.find(c => c.is_active) || cameras[0]
+        const activeCamera = cameraList.find(c => c.is_active) || cameraList[0]
         if (activeCamera) {
           setSelectedCamera(activeCamera)
           logger.info('Camera selected', { cameraId: activeCamera.id })
@@ -216,13 +218,20 @@ export default function Dashboard() {
               value={selectedCamera?.id || ''}
               onChange={(e) => {
                 const cameraId = Number(e.target.value)
-                // TODO: API'den kamera detayını çek
-                setSelectedCamera({ id: cameraId } as Camera)
+                const camera = cameras.find(c => c.id === cameraId)
+                if (camera) {
+                  setSelectedCamera(camera)
+                  setIsStreaming(false) // Kamera değişince stream'i durdur
+                }
               }}
               className="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg text-body focus:outline-none focus:border-purple-500 transition-all"
             >
               <option value="">Kamera seçin...</option>
-              {/* TODO: API'den kamera listesi */}
+              {cameras.map((camera) => (
+                <option key={camera.id} value={camera.id}>
+                  {camera.name} {camera.location ? `(${camera.location})` : ''}
+                </option>
+              ))}
             </select>
           </div>
           <div className="flex-1">

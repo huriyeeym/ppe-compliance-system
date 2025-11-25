@@ -1,33 +1,62 @@
+import { useState, useEffect } from 'react'
+import { cameraService, type Camera } from '../../lib/api/services/cameraService'
+import { domainService } from '../../lib/api/services/domainService'
+import { logger } from '../../lib/utils/logger'
+
 interface CameraGridProps {
   domainId?: string
 }
 
-interface Camera {
-  id: number
-  name: string
-  domain_id: number
-  source_type: 'webcam' | 'rtsp' | 'file'
-  source_uri: string
-  is_active: boolean
-  location?: string
-}
-
 export default function CameraGrid({ domainId }: CameraGridProps) {
-  // TODO: API call: GET /api/v1/cameras?domain_id=...
-  // Şimdilik mock data
-  const cameras: Camera[] = [
-    { id: 1, name: 'Area 1 - Main Entrance', domain_id: 1, source_type: 'rtsp', source_uri: 'rtsp://camera1.local', is_active: true, location: 'Bina A, Giriş' },
-    { id: 2, name: 'Area 2 - Construction Zone', domain_id: 1, source_type: 'webcam', source_uri: '/dev/video0', is_active: true, location: 'Şantiye Alanı' },
-  ]
+  const [cameras, setCameras] = useState<Camera[]>([])
+  const [loading, setLoading] = useState(true)
 
-  const filteredCameras = domainId 
-    ? cameras.filter(c => c.domain_id.toString() === domainId || c.domain_id === 1) // Mock: domainId string, id number
-    : cameras
+  useEffect(() => {
+    const loadCameras = async () => {
+      try {
+        setLoading(true)
+        if (domainId) {
+          // Domain type'dan ID'ye çevir
+          const domains = await domainService.getActive()
+          const domain = domains.find(d => d.type === domainId)
+          if (domain) {
+            const cameraList = await cameraService.getAll(domain.id)
+            setCameras(cameraList)
+          }
+        } else {
+          const cameraList = await cameraService.getAll()
+          setCameras(cameraList)
+        }
+      } catch (err) {
+        logger.error('CameraGrid load error', err)
+      } finally {
+        setLoading(false)
+      }
+    }
+    loadCameras()
+  }, [domainId])
+
+  const filteredCameras = cameras.filter(c => c.is_active)
 
   const sourceTypeLabels = {
     webcam: 'Webcam',
     rtsp: 'RTSP',
     file: 'Dosya',
+  }
+
+  if (loading) {
+    return (
+      <div className="card">
+        <div className="animate-pulse space-y-4">
+          <div className="h-6 bg-slate-700 rounded w-1/3"></div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {[1, 2].map((i) => (
+              <div key={i} className="aspect-video bg-slate-700 rounded-lg"></div>
+            ))}
+          </div>
+        </div>
+      </div>
+    )
   }
 
   return (
