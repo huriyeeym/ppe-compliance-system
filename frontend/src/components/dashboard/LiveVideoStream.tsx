@@ -1,4 +1,5 @@
 import { useRef, useEffect, useState } from 'react'
+import { detectionService } from '../../lib/api/services/detectionService'
 import { logger } from '../../lib/utils/logger'
 
 interface LiveVideoStreamProps {
@@ -53,6 +54,7 @@ export default function LiveVideoStream({
   const [detections, setDetections] = useState<Detection[]>([])
   const [fps, setFps] = useState(0)
   const [detectionFps, setDetectionFps] = useState(0)
+  const detectionCanvasRef = useRef<HTMLCanvasElement | null>(null)
 
   // Webcam stream başlat
   useEffect(() => {
@@ -84,59 +86,111 @@ export default function LiveVideoStream({
     }
   }, [isStreaming])
 
-  // Detection sonuçlarını al (WebSocket veya polling)
+  // Detection results via backend API
   useEffect(() => {
-    if (!isStreaming) return
+    if (!isStreaming) {
+      setDetections([])
+      return
+    }
 
-    // TODO: WebSocket bağlantısı kur
-    // ws://localhost:8000/ws/detection?camera_id=${cameraId}&domain_id=${domainId}
-    
-    // Şimdilik mock detection (her 200ms'de bir)
-    const interval = setInterval(() => {
-      // Mock detection data - İnşaat alanı için
-      const mockDetections: Detection[] = [
-        {
-          person_id: 1,
-          bbox: { x: 100, y: 150, w: 80, h: 180 },
-          ppe_status: {
-            hard_hat: { detected: true, confidence: 0.95 },
-            safety_vest: { detected: false, confidence: 0.0 },
-          },
-          compliance: false, // Yelek eksik = ihlal
-        },
-      ]
+    let isMounted = true
+    let detecting = false
+    let lastDetectionTime = performance.now()
 
-      setDetections(mockDetections)
-      setDetectionFps(Math.floor(Math.random() * 3) + 8) // 8-10 FPS detection rate
+    const runDetection = async () => {
+      if (!videoRef.current) return
+      const video = videoRef.current
 
-      // İhlal kontrolü - İnşaat kurallarına göre
-      mockDetections.forEach((det) => {
-        if (!det.compliance) {
-          const missing: string[] = []
-          if (!det.ppe_status.hard_hat.detected) missing.push('hard_hat')
-          if (!det.ppe_status.safety_vest.detected) missing.push('safety_vest')
+      if (!video.videoWidth || !video.videoHeight) return
+      if (detecting) return
 
-          if (missing.length > 0 && onViolationDetected) {
-            // Frame snapshot al (canvas'tan)
-            const canvas = canvasRef.current
-            let frameSnapshot: string | undefined
-            if (canvas) {
-              frameSnapshot = canvas.toDataURL('image/jpeg', 0.8)
+      if (!detectionCanvasRef.current) {
+        detectionCanvasRef.current = document.createElement('canvas')
+      }
+      const canvas = detectionCanvasRef.current
+      canvas.width = video.videoWidth
+      canvas.height = video.videoHeight
+
+      const ctx = canvas.getContext('2d')
+      if (!ctx) return
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+
+      detecting = true
+      canvas.toBlob(async (blob) => {
+        if (!blob || !isMounted) {
+          detecting = false
+          return
+        }
+        try {
+          const result = await detectionService.detectFrame(blob)
+          if (!isMounted) return
+
+          const mappedDetections: Detection[] = result.detections.map((det, index) => {
+            const hardHatStatus = det.detected_ppe.find((ppe) => ppe.type === 'hard_hat')
+            const vestStatus = det.detected_ppe.find((ppe) => ppe.type === 'safety_vest')
+            const missingHardHat = det.missing_ppe.some((ppe) => ppe.type === 'hard_hat')
+            const missingVest = det.missing_ppe.some((ppe) => ppe.type === 'safety_vest')
+
+            return {
+              person_id: det.person_id ?? index + 1,
+              bbox: det.bbox,
+              ppe_status: {
+                hard_hat: {
+                  detected: !missingHardHat || !!hardHatStatus,
+                  confidence: hardHatStatus?.confidence ?? 0,
+                },
+                safety_vest: {
+                  detected: !missingVest || !!vestStatus,
+                  confidence: vestStatus?.confidence ?? 0,
+                },
+              },
+              compliance: det.missing_ppe.length === 0,
             }
+          })
 
-            onViolationDetected({
-              timestamp: new Date().toISOString(),
-              missing_ppe: missing,
-              person_bbox: det.bbox,
-              confidence: 0.9,
-              frame_snapshot: frameSnapshot,
+          setDetections(mappedDetections)
+          const now = performance.now()
+          const elapsed = now - lastDetectionTime
+          setDetectionFps(Math.round(1000 / Math.max(elapsed, 1)))
+          lastDetectionTime = now
+
+          if (onViolationDetected) {
+            mappedDetections.forEach((det) => {
+              if (det.compliance) return
+              const missing: string[] = []
+              if (!det.ppe_status.hard_hat.detected) missing.push('hard_hat')
+              if (!det.ppe_status.safety_vest.detected) missing.push('safety_vest')
+              if (missing.length === 0) return
+
+              const overlayCanvas = canvasRef.current
+              let frameSnapshot: string | undefined
+              if (overlayCanvas) {
+                frameSnapshot = overlayCanvas.toDataURL('image/jpeg', 0.8)
+              }
+
+              onViolationDetected({
+                timestamp: new Date().toISOString(),
+                missing_ppe: missing,
+                person_bbox: det.bbox,
+                confidence: det.ppe_status.hard_hat.confidence || det.ppe_status.safety_vest.confidence,
+                frame_snapshot: frameSnapshot,
+              })
             })
           }
+        } catch (err) {
+          logger.error('Detection failed', err)
+        } finally {
+          detecting = false
         }
-      })
-    }, 200) // Her 200ms'de bir detection (5 FPS detection rate)
+      }, 'image/jpeg', 0.7)
+    }
 
-    return () => clearInterval(interval)
+    const interval = setInterval(runDetection, 800)
+
+    return () => {
+      isMounted = false
+      clearInterval(interval)
+    }
   }, [isStreaming, cameraId, domainId, onViolationDetected])
 
   // Video FPS hesapla
