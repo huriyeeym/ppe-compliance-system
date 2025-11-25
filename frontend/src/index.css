@@ -4,13 +4,12 @@
 
 @layer base {
   * {
-    @apply border-white/10;
+    @apply border-gray-200;
   }
   
   body {
-    @apply bg-slate-900 text-slate-50;
+    @apply bg-gray-50 text-gray-900;
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
-    background-attachment: fixed;
   }
   
   html {
@@ -19,52 +18,54 @@
 }
 
 @layer utilities {
-  /* Cards - Düz renk, glow YOK */
+  /* Cards - Açık, temiz, minimal gölge */
   .card {
-    @apply bg-slate-800 rounded-2xl p-6 shadow-lg border border-white/10;
+    @apply bg-white rounded-lg p-6 shadow-sm border border-gray-200;
   }
   
   .card-hover {
-    @apply transition-all duration-200 hover:bg-slate-700/50 hover:shadow-xl;
+    @apply transition-all duration-200 hover:shadow-md hover:border-gray-300;
   }
   
-  /* Buttons */
+  /* Buttons - Profesyonel, sade */
   .btn-primary {
-    @apply bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white px-6 py-3 rounded-xl font-semibold shadow-lg shadow-purple-500/30 hover:shadow-xl hover:shadow-purple-500/40 transition-all hover:scale-[1.02];
+    @apply bg-[#1E3A5F] hover:bg-[#2A4A6F] text-white px-6 py-2.5 rounded-lg font-medium shadow-sm hover:shadow transition-all;
   }
   
   .btn-secondary {
-    @apply bg-transparent border border-slate-600 text-slate-200 px-6 py-3 rounded-xl font-medium hover:bg-white/5 transition-all;
+    @apply bg-white border border-gray-300 text-gray-700 px-6 py-2.5 rounded-lg font-medium hover:bg-gray-50 transition-all;
   }
   
   .btn-ghost {
-    @apply bg-transparent text-slate-400 px-4 py-2 rounded-lg hover:bg-white/5 transition-all;
+    @apply bg-transparent text-gray-600 px-4 py-2 rounded-lg hover:bg-gray-100 transition-all;
   }
   
-  /* Typography */
+  .btn-danger {
+    @apply bg-[#FF6B35] hover:bg-[#E55A2B] text-white px-6 py-2.5 rounded-lg font-medium shadow-sm hover:shadow transition-all;
+  }
+  
+  .btn-success {
+    @apply bg-[#4CAF50] hover:bg-[#45A049] text-white px-6 py-2.5 rounded-lg font-medium shadow-sm hover:shadow transition-all;
+  }
+  
+  /* Typography - Net hiyerarşi */
   .text-page-title {
-    @apply text-[28px] font-bold leading-tight text-slate-50;
+    @apply text-3xl font-bold leading-tight text-gray-900;
   }
   
   .text-section-title {
-    @apply text-xl font-semibold leading-snug text-slate-50;
+    @apply text-xl font-semibold leading-snug text-gray-900;
   }
   
   .text-body {
-    @apply text-sm leading-relaxed text-slate-300;
+    @apply text-sm leading-relaxed text-gray-700;
   }
   
   .text-caption {
-    @apply text-xs leading-normal text-slate-500;
+    @apply text-xs leading-normal text-gray-500;
   }
   
-  /* Glassmorphism - Sadece özel durumlar için */
-  .glass {
-    @apply backdrop-blur-xl bg-white/5 border border-white/10;
-  }
-  
-  /* Gradient text - Sadece başlıklar için */
-  .gradient-text {
-    @apply bg-gradient-to-r from-white via-purple-200 to-pink-200 bg-clip-text text-transparent;
+  .text-label {
+    @apply text-sm font-medium text-gray-700;
   }
 }

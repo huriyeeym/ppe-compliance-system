@@ -166,10 +166,10 @@ export default function Dashboard() {
     return (
       <div className="card">
         <div className="text-center py-12">
-          <div className="text-4xl mb-4 opacity-30">⚠️</div>
-          <h3 className="text-section-title mb-2">Hata</h3>
-          <p className="text-body text-slate-500">{error}</p>
-          <p className="text-caption text-slate-600 mt-2">
+          <div className="text-5xl mb-4 text-[#FF6B35]">⚠️</div>
+          <h3 className="text-section-title mb-2 text-gray-900">Hata</h3>
+          <p className="text-body text-gray-700">{error}</p>
+          <p className="text-caption text-gray-500 mt-2">
             Backend API çalışıyor mu kontrol edin: http://localhost:8000/docs
           </p>
         </div>
@@ -181,8 +181,8 @@ export default function Dashboard() {
     return (
       <div className="card">
         <div className="text-center py-12">
-          <div className="text-4xl mb-4 opacity-30 animate-spin">⏳</div>
-          <p className="text-body text-slate-500">Yükleniyor...</p>
+          <div className="text-5xl mb-4 text-gray-400 animate-spin">⏳</div>
+          <p className="text-body text-gray-600">Yükleniyor...</p>
         </div>
       </div>
     )
@@ -197,23 +197,23 @@ export default function Dashboard() {
             <h1 className="text-page-title">
               {selectedDomain.icon} {selectedDomain.name}
             </h1>
-            <p className="text-caption text-slate-500 mt-1">
+            <p className="text-caption text-gray-600 mt-1">
               Gerçek zamanlı baret ve yelek tespiti
             </p>
           </div>
           <button
             onClick={() => setIsStreaming(!isStreaming)}
             disabled={!selectedCamera}
-            className={`btn-primary ${isStreaming ? 'bg-red-500 hover:bg-red-600' : ''} ${!selectedCamera ? 'opacity-50 cursor-not-allowed' : ''}`}
+            className={`${isStreaming ? 'btn-danger' : 'btn-primary'} ${!selectedCamera ? 'opacity-50 cursor-not-allowed' : ''}`}
           >
             {isStreaming ? '⏸️ Durdur' : '▶️ Başlat'}
           </button>
         </div>
 
         {/* Kamera Seçimi */}
-        <div className="flex items-center gap-4 p-4 bg-slate-800/50 rounded-lg border border-slate-700">
+        <div className="flex items-center gap-4 p-4 bg-white rounded-lg border border-gray-200 shadow-sm">
           <div className="flex-1">
-            <label className="block text-caption text-slate-400 mb-1">Kamera</label>
+            <label className="block text-label mb-1">Kamera</label>
             <select
               value={selectedCamera?.id || ''}
               onChange={(e) => {
@@ -224,7 +224,7 @@ export default function Dashboard() {
                   setIsStreaming(false) // Kamera değişince stream'i durdur
                 }
               }}
-              className="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg text-body focus:outline-none focus:border-purple-500 transition-all"
+              className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-body focus:outline-none focus:border-[#1E3A5F] focus:ring-1 focus:ring-[#1E3A5F] transition-all"
             >
               <option value="">Kamera seçin...</option>
               {cameras.map((camera) => (
@@ -235,8 +235,8 @@ export default function Dashboard() {
             </select>
           </div>
           <div className="flex-1">
-            <label className="block text-caption text-slate-400 mb-1">Domain</label>
-            <div className="px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg text-body">
+            <label className="block text-label mb-1">Domain</label>
+            <div className="px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-body text-gray-700">
               {selectedDomain.icon} {selectedDomain.name}
             </div>
           </div>
@@ -248,7 +248,7 @@ export default function Dashboard() {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
           {[1, 2, 3, 4].map((i) => (
             <div key={i} className="card animate-pulse">
-              <div className="h-24 bg-slate-700 rounded"></div>
+              <div className="h-24 bg-gray-200 rounded"></div>
             </div>
           ))}
         </div>
@@ -295,9 +295,9 @@ export default function Dashboard() {
           ) : (
             <div className="card">
               <div className="text-center py-12">
-                <div className="text-6xl mb-4 opacity-30">📹</div>
-                <h3 className="text-section-title mb-2">Kamera Seçilmedi</h3>
-                <p className="text-body text-slate-500">
+                <div className="text-6xl mb-4 text-gray-300">📹</div>
+                <h3 className="text-section-title mb-2 text-gray-900">Kamera Seçilmedi</h3>
+                <p className="text-body text-gray-600">
                   Lütfen yukarıdan bir kamera seçin
                 </p>
               </div>
