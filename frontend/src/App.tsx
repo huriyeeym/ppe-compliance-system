@@ -5,6 +5,7 @@ import LiveCamera from './pages/LiveCamera'
 import Report from './pages/Report'
 import Analytics from './pages/Analytics'
 import Configure from './pages/Configure'
+import Admin from './pages/Admin'
 
 function App() {
   return (
@@ -16,6 +17,7 @@ function App() {
           <Route path="/report" element={<Report />} />
           <Route path="/analytics" element={<Analytics />} />
           <Route path="/configure" element={<Configure />} />
+          <Route path="/admin" element={<Admin />} />
         </Routes>
       </Layout>
     </BrowserRouter>

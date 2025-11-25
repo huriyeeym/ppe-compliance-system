@@ -10,6 +10,7 @@ export default function Sidebar() {
     { path: '/report', label: 'Report', icon: '📋' },
     { path: '/analytics', label: 'Analytics', icon: '📊' },
     { path: '/configure', label: 'Configure', icon: '⚙️' },
+    { path: '/admin', label: 'Admin', icon: '👑' },
   ]
 
   return (
