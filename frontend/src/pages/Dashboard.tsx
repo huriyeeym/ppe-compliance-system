@@ -256,25 +256,25 @@ export default function Dashboard() {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
           <KPICard
             title="Baret İhlali"
-            value={stats.by_ppe_type?.hard_hat?.toLocaleString() || '0'}
+            value={(stats.by_ppe_type?.hard_hat ?? 0).toLocaleString()}
             icon="🔨"
             color="danger"
           />
           <KPICard
             title="Yelek İhlali"
-            value={stats.by_ppe_type?.safety_vest?.toLocaleString() || '0'}
+            value={(stats.by_ppe_type?.safety_vest ?? 0).toLocaleString()}
             icon="🦺"
             color="danger"
           />
           <KPICard
             title="Uyumluluk Oranı"
-            value={`${stats.compliance_rate.toFixed(0)}%`}
+            value={`${(stats.compliance_rate ?? 0).toFixed(0)}%`}
             icon="✅"
             color="success"
           />
           <KPICard
             title="Toplam İhlal"
-            value={stats.total.toLocaleString()}
+            value={(stats.total ?? 0).toLocaleString()}
             icon="⚠️"
             color="warning"
           />
