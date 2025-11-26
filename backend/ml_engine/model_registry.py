@@ -37,9 +37,9 @@ class ModelRegistry:
         """
         # Default registry
         registry = {
-            # Active domains
-            "construction": "construction_manufacturing_v1.pt",  # Combined model (phase 1)
-            "manufacturing": "construction_manufacturing_v1.pt",  # Same model initially
+            # Active domains use pretrained PPE model for now
+            "construction": "ppe_detection_yolov8.pt",
+            "manufacturing": "ppe_detection_yolov8.pt",
             
             # Planned domains (will use base model until trained)
             "mining": "yolov8n.pt",  # Pre-trained YOLO (fallback)

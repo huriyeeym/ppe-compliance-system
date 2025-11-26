@@ -44,8 +44,9 @@ class ViolationSeverity(str, Enum):
 
 class UserRole(str, Enum):
     """Application user roles"""
-    ADMIN = "admin"
-    OPERATOR = "operator"
+    SUPER_ADMIN = "super_admin"  # Full system access
+    DOMAIN_ADMIN = "domain_admin"  # Domain-specific management
+    VIEWER = "viewer"  # Read-only access
 
 
 # ==========================================
@@ -161,10 +162,12 @@ class Violation(Base):
     person_bbox = Column(JSON, nullable=False)               # {"x": 100, "y": 200, "w": 50, "h": 100}
     detected_ppe = Column(JSON, nullable=False)              # [{"type": "hard_hat", "confidence": 0.95}]
     missing_ppe = Column(JSON, nullable=False)               # [{"type": "safety_vest", "required": true}]
+    track_id = Column(Integer, nullable=True)                # Model-based identifier per person
     
     confidence = Column(Float, nullable=False)               # Average detection confidence
     severity = Column(SQLEnum(ViolationSeverity), default=ViolationSeverity.MEDIUM)
-    frame_snapshot = Column(String(500), nullable=True)      # Base64 or file path
+    frame_snapshot = Column(Text, nullable=True)             # Legacy base64 snapshot (deprecated)
+    snapshot_path = Column(String(300), nullable=True)       # Relative file path under data/snapshots
     
     # Acknowledgment
     acknowledged = Column(Boolean, default=False, index=True)
@@ -214,7 +217,7 @@ class User(Base):
     email = Column(String(100), unique=True, nullable=False, index=True)
     full_name = Column(String(100), nullable=False)
     hashed_password = Column(String(255), nullable=False)
-    role = Column(SQLEnum(UserRole), default=UserRole.OPERATOR, nullable=False)
+    role = Column(SQLEnum(UserRole), default=UserRole.VIEWER, nullable=False)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     last_login = Column(DateTime, nullable=True)

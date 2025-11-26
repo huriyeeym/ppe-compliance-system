@@ -4,6 +4,8 @@ Manage PPE violations with filtering and statistics
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi.responses import FileResponse
+from pathlib import Path
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional
 from datetime import datetime
@@ -13,6 +15,7 @@ from backend.database import crud, schemas
 from backend.database.models import ViolationSeverity
 from backend.services.violation_service import ViolationService
 from backend.utils.logger import logger
+from backend.config import settings
 
 
 router = APIRouter(prefix="/violations", tags=["Violations"])
@@ -161,6 +164,34 @@ async def update_violation(
             detail=f"Violation with id {violation_id} not found"
         )
     return updated_violation
+
+
+@router.get("/{violation_id}/snapshot")
+async def get_violation_snapshot(
+    violation_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Return stored snapshot image for a violation.
+    """
+    violation = await crud.get_violation_by_id(db, violation_id)
+    if not violation or not violation.snapshot_path:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Snapshot not found for this violation"
+        )
+
+    file_path = Path(violation.snapshot_path)
+    if not file_path.is_absolute():
+        file_path = settings.snapshots_dir / file_path
+
+    if not file_path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Snapshot file is missing on the server"
+        )
+
+    return FileResponse(file_path, media_type="image/jpeg")
 
 
 @router.post("/{violation_id}/acknowledge", response_model=schemas.ViolationResponse)

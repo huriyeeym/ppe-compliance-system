@@ -33,7 +33,8 @@ class Settings(BaseSettings):
     # ML MODEL
     # ==========================================
     model_base_path: Path = Path("data/models")
-    default_model: str = "construction_manufacturing_v1.pt"
+    # Default construction model aligns with CURRENT_STATUS.md "Stage 2" best weights
+    default_model: str = "ppe_detection_yolov8.pt"
     confidence_threshold: float = 0.5  # Minimum detection confidence
     
     # ==========================================
@@ -69,6 +70,7 @@ class Settings(BaseSettings):
     datasets_dir: Path = Path("data/datasets")
     models_dir: Path = Path("data/models")
     logs_dir: Path = Path("logs")
+    snapshots_dir: Path = Path("data/snapshots")
     
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -90,6 +92,7 @@ def initialize_directories():
         settings.datasets_dir,
         settings.models_dir,
         settings.logs_dir,
+        settings.snapshots_dir,
     ]
     for directory in directories:
         directory.mkdir(parents=True, exist_ok=True)

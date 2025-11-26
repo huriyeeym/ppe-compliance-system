@@ -160,9 +160,17 @@ class ViolationBase(BaseModel):
     person_bbox: dict = Field(..., description="Person bounding box {x, y, w, h}")
     detected_ppe: List[dict] = Field(..., description="Detected PPE items")
     missing_ppe: List[dict] = Field(..., description="Missing PPE items")
+    track_id: Optional[int] = Field(None, description="Tracker ID for the detected person")
     confidence: float = Field(..., ge=0.0, le=1.0)
     severity: ViolationSeverity = Field(default=ViolationSeverity.MEDIUM)
-    frame_snapshot: Optional[str] = Field(None, max_length=500)
+    frame_snapshot: Optional[str] = Field(
+        default=None,
+        description="Base64 snapshot payload (deprecated, kept for backward compatibility)"
+    )
+    snapshot_path: Optional[str] = Field(
+        default=None,
+        description="Relative path to the stored snapshot image"
+    )
 
 
 class ViolationCreate(ViolationBase):
@@ -223,7 +231,7 @@ class UserBase(BaseModel):
     """Shared user fields"""
     email: EmailStr
     full_name: str = Field(..., min_length=2, max_length=100)
-    role: UserRole = UserRole.OPERATOR
+    role: UserRole = UserRole.VIEWER
     is_active: bool = True
 
 

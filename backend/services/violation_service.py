@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.database import crud, schemas
 from backend.database.models import Violation, ViolationSeverity
 from backend.utils.logger import logger
+from backend.utils.snapshots import save_snapshot_image
 
 
 class ViolationService:
@@ -113,6 +114,12 @@ class ViolationService:
             )
             logger.debug(f"Calculated severity: {violation_data.severity}")
         
+        # Persist snapshot if provided
+        if violation_data.frame_snapshot:
+            snapshot_path = save_snapshot_image(violation_data.frame_snapshot)
+            violation_data.snapshot_path = snapshot_path
+            violation_data.frame_snapshot = None  # do not store base64 in DB
+
         # Create violation
         violation = await crud.create_violation(self.db, violation_data)
         logger.info(f"Violation {violation.id} created successfully")

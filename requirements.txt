@@ -28,6 +28,7 @@ opencv-python==4.8.1.78       # Video capture, image processing
 numpy==1.24.3                 # Numerical computing
 pillow==10.1.0                # Image processing
 onnxruntime==1.16.3           # ONNX Runtime for optimized inference (2-3x speedup)
+huggingface-hub==0.19.4       # For downloading pretrained models (Ultralytics HUB)
 
 # ==========================================
 # UTILITIES
@@ -35,6 +36,7 @@ onnxruntime==1.16.3           # ONNX Runtime for optimized inference (2-3x speed
 python-dotenv==1.0.0          # Environment variables
 python-jose[cryptography]==3.3.0  # JWT tokens (future)
 passlib[bcrypt]==1.7.4        # Password hashing (future)
+bcrypt==4.0.1                # Compatible bcrypt backend for passlib
 python-dateutil==2.8.2        # Date utilities
 
 # ==========================================
