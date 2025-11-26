@@ -125,11 +125,16 @@ export default function LiveVideoStream({
           const result = await detectionService.detectFrame(blob)
           if (!isMounted) return
 
-          const mappedDetections: Detection[] = result.detections.map((det, index) => {
-            const hardHatStatus = det.detected_ppe.find((ppe) => ppe.type === 'hard_hat')
-            const vestStatus = det.detected_ppe.find((ppe) => ppe.type === 'safety_vest')
-            const missingHardHat = det.missing_ppe.some((ppe) => ppe.type === 'hard_hat')
-            const missingVest = det.missing_ppe.some((ppe) => ppe.type === 'safety_vest')
+          const rawDetections = Array.isArray(result?.detections) ? result.detections : []
+
+          const mappedDetections: Detection[] = rawDetections.map((det, index) => {
+            const detectedPpe = Array.isArray(det.detected_ppe) ? det.detected_ppe : []
+            const missingPpe = Array.isArray(det.missing_ppe) ? det.missing_ppe : []
+
+            const hardHatStatus = detectedPpe.find((ppe) => ppe.type === 'hard_hat')
+            const vestStatus = detectedPpe.find((ppe) => ppe.type === 'safety_vest')
+            const missingHardHat = missingPpe.some((ppe) => ppe.type === 'hard_hat')
+            const missingVest = missingPpe.some((ppe) => ppe.type === 'safety_vest')
 
             return {
               person_id: det.person_id ?? index + 1,
@@ -144,7 +149,7 @@ export default function LiveVideoStream({
                   confidence: vestStatus?.confidence ?? 0,
                 },
               },
-              compliance: det.missing_ppe.length === 0,
+              compliance: missingPpe.length === 0,
             }
           })
 

@@ -4,11 +4,11 @@
 
 @layer base {
   * {
-    @apply border-gray-200;
+    @apply border-[#E9ECEF];
   }
   
   body {
-    @apply bg-gray-50 text-gray-900;
+    @apply bg-[#F3F6F9] text-[#495057];
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
   }
   
@@ -18,54 +18,58 @@
 }
 
 @layer utilities {
-  /* Cards - Açık, temiz, minimal gölge */
+  /* Cards - Velzon style */
   .card {
-    @apply bg-white rounded-lg p-6 shadow-sm border border-gray-200;
+    @apply bg-white rounded-lg p-6 shadow-sm border border-[#E9ECEF];
   }
   
   .card-hover {
-    @apply transition-all duration-200 hover:shadow-md hover:border-gray-300;
+    @apply transition-all duration-200 hover:shadow-md hover:border-[#DEE2E6];
   }
   
-  /* Buttons - Profesyonel, sade */
+  /* Buttons - Velzon style */
   .btn-primary {
-    @apply bg-[#1E3A5F] hover:bg-[#2A4A6F] text-white px-6 py-2.5 rounded-lg font-medium shadow-sm hover:shadow transition-all;
+    @apply bg-[#405189] hover:bg-[#364574] text-white px-4 py-2 rounded-md text-sm font-medium shadow-sm hover:shadow transition-all;
   }
   
   .btn-secondary {
-    @apply bg-white border border-gray-300 text-gray-700 px-6 py-2.5 rounded-lg font-medium hover:bg-gray-50 transition-all;
+    @apply bg-white border border-[#E9ECEF] text-[#495057] px-4 py-2 rounded-md text-sm font-medium hover:bg-[#F3F6F9] transition-all;
   }
   
   .btn-ghost {
-    @apply bg-transparent text-gray-600 px-4 py-2 rounded-lg hover:bg-gray-100 transition-all;
+    @apply bg-transparent text-[#878A99] px-3 py-1.5 rounded-md text-sm hover:bg-[#F3F6F9] hover:text-[#495057] transition-all;
   }
   
   .btn-danger {
-    @apply bg-[#FF6B35] hover:bg-[#E55A2B] text-white px-6 py-2.5 rounded-lg font-medium shadow-sm hover:shadow transition-all;
+    @apply bg-[#F06548] hover:bg-[#e04d35] text-white px-4 py-2 rounded-md text-sm font-medium shadow-sm hover:shadow transition-all;
   }
   
   .btn-success {
-    @apply bg-[#4CAF50] hover:bg-[#45A049] text-white px-6 py-2.5 rounded-lg font-medium shadow-sm hover:shadow transition-all;
+    @apply bg-[#0AB39C] hover:bg-[#099382] text-white px-4 py-2 rounded-md text-sm font-medium shadow-sm hover:shadow transition-all;
   }
   
-  /* Typography - Net hiyerarşi */
+  .btn-warning {
+    @apply bg-[#F7B84B] hover:bg-[#f5a82a] text-white px-4 py-2 rounded-md text-sm font-medium shadow-sm hover:shadow transition-all;
+  }
+  
+  /* Typography - Velzon style */
   .text-page-title {
-    @apply text-3xl font-bold leading-tight text-gray-900;
+    @apply text-2xl font-semibold leading-tight text-[#495057];
   }
   
   .text-section-title {
-    @apply text-xl font-semibold leading-snug text-gray-900;
+    @apply text-lg font-semibold leading-snug text-[#495057];
   }
   
   .text-body {
-    @apply text-sm leading-relaxed text-gray-700;
+    @apply text-sm leading-relaxed text-[#495057];
   }
   
   .text-caption {
-    @apply text-xs leading-normal text-gray-500;
+    @apply text-xs leading-normal text-[#878A99];
   }
   
   .text-label {
-    @apply text-sm font-medium text-gray-700;
+    @apply text-sm font-medium text-[#495057];
   }
 }

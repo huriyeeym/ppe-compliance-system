@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react'
+import { UserPlus, Edit, Trash2, Shield, Crown, Eye, Mail, User as UserIcon } from 'lucide-react'
 import { domainService, type Domain } from '../lib/api/services/domainService'
 import { cameraService, type Camera } from '../lib/api/services/cameraService'
 import { violationService, type Violation } from '../lib/api/services/violationService'
+import { userService, type User } from '../lib/api/services/userService'
 import { logger } from '../lib/utils/logger'
 
 /**
@@ -20,6 +22,9 @@ export default function Admin() {
   const [domains, setDomains] = useState<Domain[]>([])
   const [cameras, setCameras] = useState<Camera[]>([])
   const [violations, setViolations] = useState<Violation[]>([])
+  const [users, setUsers] = useState<User[]>([])
+  const [loading, setLoading] = useState(true)
+  const [showUserForm, setShowUserForm] = useState(false)
   const [stats, setStats] = useState({
     totalUsers: 0,
     totalDomains: 0,
@@ -33,20 +38,23 @@ export default function Admin() {
   }, [])
 
   const loadStats = async () => {
+    setLoading(true)
     try {
-      const [domainList, cameraList, violationList] = await Promise.all([
+      const [domainList, cameraList, violationList, userList] = await Promise.all([
         domainService.getAll(),
         cameraService.getAll(),
         violationService.getAll({ limit: 1000 }),
+        userService.getAll().catch(() => []), // May fail if not authenticated
       ])
       setDomains(domainList)
       setCameras(cameraList)
       setViolations(violationList.items)
+      setUsers(userList)
 
-      const unacknowledged = violationList.items.filter(v => !v.acknowledged).length
+      const unacknowledged = violationList.items.filter(v => v.status === 'open').length
 
       setStats({
-        totalUsers: 0, // TODO: User service eklendiğinde
+        totalUsers: userList.length,
         totalDomains: domainList.length,
         totalCameras: cameraList.length,
         totalViolations: violationList.items.length,
@@ -54,47 +62,73 @@ export default function Admin() {
       })
     } catch (err) {
       logger.error('Admin stats load error', err)
+    } finally {
+      setLoading(false)
     }
   }
 
+  const getRoleIcon = (role: string) => {
+    switch (role) {
+      case 'super_admin':
+        return <Crown className="w-4 h-4 text-yellow-600" />
+      case 'domain_admin':
+        return <Shield className="w-4 h-4 text-blue-600" />
+      case 'viewer':
+        return <Eye className="w-4 h-4 text-gray-600" />
+      default:
+        return <UserIcon className="w-4 h-4 text-gray-600" />
+    }
+  }
+
+  const getRoleDisplayName = (role: string) => {
+    const roleMap: Record<string, string> = {
+      super_admin: 'Super Admin',
+      domain_admin: 'Domain Admin',
+      viewer: 'Viewer',
+      admin: 'Admin',
+      operator: 'Operator',
+    }
+    return roleMap[role] || role
+  }
+
   const tabs = [
-    { id: 'users', label: 'Kullanıcı Yönetimi', icon: '👥' },
-    { id: 'settings', label: 'Sistem Ayarları', icon: '⚙️' },
-    { id: 'models', label: 'Model Yönetimi', icon: '🤖' },
-    { id: 'violations', label: 'İhlal Yönetimi', icon: '⚠️' },
-    { id: 'logs', label: 'Sistem Logları', icon: '📋' },
-    { id: 'stats', label: 'Genel İstatistikler', icon: '📊' },
+    { id: 'users', label: 'User Management', icon: '👥' },
+    { id: 'settings', label: 'System Settings', icon: '⚙️' },
+    { id: 'models', label: 'Model Management', icon: '🤖' },
+    { id: 'violations', label: 'Violation Management', icon: '⚠️' },
+    { id: 'logs', label: 'System Logs', icon: '📋' },
+    { id: 'stats', label: 'Statistics', icon: '📊' },
   ]
 
   return (
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-page-title mb-1">Yönetici Paneli</h1>
-        <p className="text-caption text-slate-500">Sistem yönetimi ve konfigürasyon</p>
+        <h1 className="text-2xl font-semibold text-gray-900 mb-1">Admin Panel</h1>
+        <p className="text-sm text-gray-500">System management and configuration</p>
       </div>
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
         <div className="card">
-          <div className="text-2xl font-bold text-slate-50 mb-1">{stats.totalUsers}</div>
-          <div className="text-caption text-slate-500">Kullanıcı</div>
+          <div className="text-2xl font-bold text-gray-900 mb-1">{stats.totalUsers}</div>
+          <div className="text-sm text-gray-500">Users</div>
         </div>
         <div className="card">
-          <div className="text-2xl font-bold text-slate-50 mb-1">{stats.totalDomains}</div>
-          <div className="text-caption text-slate-500">Domain</div>
+          <div className="text-2xl font-bold text-gray-900 mb-1">{stats.totalDomains}</div>
+          <div className="text-sm text-gray-500">Domains</div>
         </div>
         <div className="card">
-          <div className="text-2xl font-bold text-slate-50 mb-1">{stats.totalCameras}</div>
-          <div className="text-caption text-slate-500">Kamera</div>
+          <div className="text-2xl font-bold text-gray-900 mb-1">{stats.totalCameras}</div>
+          <div className="text-sm text-gray-500">Cameras</div>
         </div>
         <div className="card">
-          <div className="text-2xl font-bold text-slate-50 mb-1">{stats.totalViolations}</div>
-          <div className="text-caption text-slate-500">Toplam İhlal</div>
+          <div className="text-2xl font-bold text-gray-900 mb-1">{stats.totalViolations}</div>
+          <div className="text-sm text-gray-500">Total Violations</div>
         </div>
         <div className="card">
-          <div className="text-2xl font-bold text-red-400 mb-1">{stats.unacknowledgedViolations}</div>
-          <div className="text-caption text-slate-500">Onaylanmamış</div>
+          <div className="text-2xl font-bold text-red-600 mb-1">{stats.unacknowledgedViolations}</div>
+          <div className="text-sm text-gray-500">Open Violations</div>
         </div>
       </div>
 
@@ -123,16 +157,107 @@ export default function Admin() {
         {activeTab === 'users' && (
           <div className="space-y-4">
             <div className="flex items-center justify-between">
-              <h3 className="text-section-title">Kullanıcı Yönetimi</h3>
-              <button className="btn-primary">+ Kullanıcı Ekle</button>
+              <h3 className="text-lg font-semibold text-gray-900">User Management</h3>
+              <button
+                onClick={() => setShowUserForm(!showUserForm)}
+                className="btn-primary flex items-center gap-2"
+              >
+                <UserPlus className="w-4 h-4" />
+                <span>Add User</span>
+              </button>
             </div>
-            <div className="p-8 bg-slate-900/30 rounded-lg border border-slate-700 text-center">
-              <div className="text-4xl mb-3 opacity-30">👥</div>
-              <p className="text-body text-slate-500">Kullanıcı yönetimi yakında...</p>
-              <p className="text-caption text-slate-600 mt-2">
-                Backend'de user modeli ve authentication eklendiğinde aktif olacak
-              </p>
-            </div>
+
+            {showUserForm && (
+              <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <p className="text-sm text-blue-800">
+                  User creation form will be implemented here. For now, users can be created via backend API.
+                </p>
+              </div>
+            )}
+
+            {loading ? (
+              <div className="text-center py-12">
+                <p className="text-body text-gray-500">Loading users...</p>
+              </div>
+            ) : users.length === 0 ? (
+              <div className="p-8 bg-gray-50 rounded-lg border border-gray-200 text-center">
+                <UserIcon className="w-12 h-12 mx-auto mb-3 text-gray-400" />
+                <p className="text-body text-gray-500">No users found</p>
+                <p className="text-sm text-gray-400 mt-2">
+                  Users can be created via backend API or admin interface
+                </p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        User
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Role
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Status
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Actions
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {users.map((user) => (
+                      <tr key={user.id} className="hover:bg-gray-50 transition-colors">
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 font-semibold">
+                              {user.full_name.charAt(0).toUpperCase()}
+                            </div>
+                            <div>
+                              <p className="text-sm font-medium text-gray-900">{user.full_name}</p>
+                              <p className="text-xs text-gray-500 flex items-center gap-1">
+                                <Mail className="w-3 h-3" />
+                                {user.email}
+                              </p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2">
+                            {getRoleIcon(user.role)}
+                            <span className="text-sm text-gray-900">
+                              {getRoleDisplayName(user.role)}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span
+                            className={`inline-flex px-2 py-1 text-xs font-medium rounded ${
+                              user.is_active
+                                ? 'bg-green-100 text-green-800'
+                                : 'bg-gray-100 text-gray-600'
+                            }`}
+                          >
+                            {user.is_active ? 'Active' : 'Inactive'}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2">
+                            <button className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
+                              <Edit className="w-4 h-4" />
+                            </button>
+                            <button className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors">
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         )}
 

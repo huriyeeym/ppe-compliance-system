@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import Layout from './components/layout/Layout'
 import Dashboard from './pages/Dashboard'
+import Events from './pages/Events'
 import LiveCamera from './pages/LiveCamera'
 import Report from './pages/Report'
 import Analytics from './pages/Analytics'
@@ -15,6 +16,7 @@ function App() {
       <Layout>
         <Routes>
           <Route path="/" element={<Dashboard />} />
+          <Route path="/events" element={<Events />} />
           <Route path="/live-camera" element={<LiveCamera />} />
           <Route path="/report" element={<Report />} />
           <Route path="/analytics" element={<Analytics />} />

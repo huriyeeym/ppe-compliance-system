@@ -1,0 +1,240 @@
+/**
+ * HTTP Client
+ * 
+ * Centralized HTTP client configuration with interceptors
+ * Handles authentication, error handling, and request/response transformation
+ * 
+ * @module lib/api/httpClient
+ */
+
+import axios from 'axios'
+import type { AxiosInstance, AxiosRequestConfig, AxiosResponse, AxiosError } from 'axios'
+
+/**
+ * API Configuration
+ */
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
+const API_PREFIX = '/api/v1'
+const REQUEST_TIMEOUT = 10000 // 10 seconds
+
+/**
+ * HTTP Client Class
+ * 
+ * Encapsulates axios instance with custom interceptors and error handling
+ */
+class HttpClient {
+  private client: AxiosInstance
+
+  constructor() {
+    this.client = axios.create({
+      baseURL: `${API_BASE_URL}${API_PREFIX}`,
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      timeout: REQUEST_TIMEOUT,
+    })
+
+    this.setupInterceptors()
+  }
+
+  /**
+   * Setup request and response interceptors
+   */
+  private setupInterceptors(): void {
+    // Request interceptor
+    this.client.interceptors.request.use(
+      (config) => {
+        // Add authentication token if available
+        const token = this.getAuthToken()
+        if (token) {
+          config.headers.Authorization = `Bearer ${token}`
+        }
+
+        // Log request in development
+        if (import.meta.env.DEV) {
+          console.log(`[API Request] ${config.method?.toUpperCase()} ${config.url}`, {
+            params: config.params,
+            data: config.data,
+          })
+        }
+
+        return config
+      },
+      (error: AxiosError) => {
+        this.handleRequestError(error)
+        return Promise.reject(error)
+      }
+    )
+
+    // Response interceptor
+    this.client.interceptors.response.use(
+      (response: AxiosResponse) => {
+        // Log response in development
+        if (import.meta.env.DEV) {
+          console.log(`[API Response] ${response.config.method?.toUpperCase()} ${response.config.url}`, {
+            status: response.status,
+            data: response.data,
+          })
+        }
+        return response
+      },
+      (error: AxiosError) => {
+        return this.handleResponseError(error)
+      }
+    )
+  }
+
+  /**
+   * Get authentication token from storage
+   */
+  private getAuthToken(): string | null {
+    // TODO: Implement token storage (localStorage, sessionStorage, or secure cookie)
+    return localStorage.getItem('auth_token')
+  }
+
+  /**
+   * Handle request errors
+   */
+  private handleRequestError(error: AxiosError): void {
+    console.error('[API Request Error]', {
+      message: error.message,
+      config: error.config,
+    })
+  }
+
+  /**
+   * Handle response errors
+   * 
+   * Centralized error handling with proper error transformation
+   */
+  private handleResponseError(error: AxiosError): Promise<never> {
+    if (!error.response) {
+      // Network error or timeout
+      console.error('[API Network Error]', {
+        message: error.message,
+        code: error.code,
+      })
+      
+      return Promise.reject({
+        type: 'NETWORK_ERROR',
+        message: 'Bağlantı hatası. Lütfen internet bağlantınızı kontrol edin.',
+        originalError: error,
+      })
+    }
+
+    const { status, data } = error.response
+
+    // Transform backend error response
+    const errorMessage = (data as any)?.detail || error.message || 'Bilinmeyen hata'
+
+    console.error('[API Response Error]', {
+      status,
+      message: errorMessage,
+      data,
+    })
+
+    // Handle specific status codes
+    switch (status) {
+      case 401:
+        // Unauthorized - redirect to login
+        // TODO: Implement auth redirect
+        return Promise.reject({
+          type: 'UNAUTHORIZED',
+          message: 'Oturum süreniz dolmuş. Lütfen tekrar giriş yapın.',
+          status,
+        })
+      
+      case 403:
+        return Promise.reject({
+          type: 'FORBIDDEN',
+          message: 'Bu işlem için yetkiniz bulunmamaktadır.',
+          status,
+        })
+      
+      case 404:
+        return Promise.reject({
+          type: 'NOT_FOUND',
+          message: 'İstenen kaynak bulunamadı.',
+          status,
+        })
+      
+      case 422:
+        // Validation error
+        return Promise.reject({
+          type: 'VALIDATION_ERROR',
+          message: errorMessage,
+          errors: (data as any)?.errors || [],
+          status,
+        })
+      
+      case 500:
+        return Promise.reject({
+          type: 'SERVER_ERROR',
+          message: 'Sunucu hatası. Lütfen daha sonra tekrar deneyin.',
+          status,
+        })
+      
+      default:
+        return Promise.reject({
+          type: 'API_ERROR',
+          message: errorMessage,
+          status,
+        })
+    }
+  }
+
+  /**
+   * Get the axios instance
+   */
+  public getInstance(): AxiosInstance {
+    return this.client
+  }
+
+  /**
+   * GET request
+   */
+  public async get<T = any>(url: string, config?: AxiosRequestConfig): Promise<T> {
+    const response = await this.client.get<T>(url, config)
+    return response.data
+  }
+
+  /**
+   * POST request
+   */
+  public async post<T = any>(url: string, data?: any, config?: AxiosRequestConfig): Promise<T> {
+    const response = await this.client.post<T>(url, data, config)
+    return response.data
+  }
+
+  /**
+   * PUT request
+   */
+  public async put<T = any>(url: string, data?: any, config?: AxiosRequestConfig): Promise<T> {
+    const response = await this.client.put<T>(url, data, config)
+    return response.data
+  }
+
+  /**
+   * PATCH request
+   */
+  public async patch<T = any>(url: string, data?: any, config?: AxiosRequestConfig): Promise<T> {
+    const response = await this.client.patch<T>(url, data, config)
+    return response.data
+  }
+
+  /**
+   * DELETE request
+   */
+  public async delete<T = any>(url: string, config?: AxiosRequestConfig): Promise<T> {
+    const response = await this.client.delete<T>(url, config)
+    return response.data
+  }
+}
+
+// Export singleton instance
+export const httpClient = new HttpClient()
+
+// Export types
+export type { AxiosRequestConfig, AxiosResponse, AxiosError }
+

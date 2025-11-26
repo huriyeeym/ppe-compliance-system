@@ -35,7 +35,7 @@ export default function Report() {
         const constructionDomain = domains.find(d => d.type === 'construction')
         
         if (!constructionDomain) {
-          setError('İnşaat alanı bulunamadı')
+          setError('Construction domain not found')
           return
         }
 
@@ -62,8 +62,8 @@ export default function Report() {
         setViolations(response.items)
         logger.info(`Loaded ${response.items.length} violations`)
       } catch (err) {
-        logger.error('İhlal yükleme hatası', err)
-        setError('İhlal listesi yüklenemedi')
+        logger.error('Failed to load violations', err)
+        setError('Failed to load violation list')
       } finally {
         setLoading(false)
       }
@@ -74,12 +74,12 @@ export default function Report() {
 
   const getPPEDisplayName = (type: string) => {
     const names: Record<string, string> = {
-      hard_hat: 'Baret',
-      safety_vest: 'Yelek',
-      safety_glasses: 'Gözlük',
-      face_mask: 'Maske',
-      safety_boots: 'Bot',
-      gloves: 'Eldiven',
+      hard_hat: 'Hard Hat',
+      safety_vest: 'Safety Vest',
+      safety_glasses: 'Safety Glasses',
+      face_mask: 'Face Mask',
+      safety_boots: 'Safety Boots',
+      gloves: 'Gloves',
     }
     return names[type] || type
   }
@@ -103,7 +103,7 @@ export default function Report() {
       // Reload violations
       window.location.reload() // TODO: Better state management
     } catch (err) {
-      logger.error('İhlal onaylama hatası', err)
+      logger.error('Failed to acknowledge violation', err)
     }
   }
 
@@ -113,7 +113,7 @@ export default function Report() {
         <div className="card">
           <div className="text-center py-12">
             <div className="text-4xl mb-4 opacity-30 animate-spin">⏳</div>
-            <p className="text-body text-slate-500">Yükleniyor...</p>
+            <p className="text-body text-slate-500">Loading...</p>
           </div>
         </div>
       </div>
@@ -126,7 +126,7 @@ export default function Report() {
         <div className="card">
           <div className="text-center py-12">
             <div className="text-4xl mb-4 opacity-30">⚠️</div>
-            <h3 className="text-section-title mb-2">Hata</h3>
+            <h3 className="text-section-title mb-2">Error</h3>
             <p className="text-body text-slate-500">{error}</p>
           </div>
         </div>
@@ -139,8 +139,8 @@ export default function Report() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-page-title mb-1">İhlal Raporları</h1>
-          <p className="text-caption text-slate-500">İnşaat alanı - Detaylı ihlal kayıtları</p>
+          <h1 className="text-page-title mb-1">Violation Reports</h1>
+          <p className="text-caption text-slate-500">Detailed violation records and export</p>
         </div>
         <button className="btn-primary flex items-center gap-2">
           📥 Export (PDF/Excel)
@@ -201,20 +201,20 @@ export default function Report() {
           <table className="w-full">
             <thead className="bg-slate-900/50 border-b border-slate-700">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Zaman</th>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Kamera</th>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Eksik PPE</th>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Tespit Edilen</th>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Önem</th>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Durum</th>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">İşlem</th>
+                <th className="px-6 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Time</th>
+                <th className="px-6 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Camera</th>
+                <th className="px-6 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Missing PPE</th>
+                <th className="px-6 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Detected</th>
+                <th className="px-6 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Severity</th>
+                <th className="px-6 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Status</th>
+                <th className="px-6 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-700">
               {violations.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="px-6 py-12 text-center text-slate-500">
-                    İhlal bulunamadı
+                    No violations found
                   </td>
                 </tr>
               ) : (
@@ -228,7 +228,7 @@ export default function Report() {
                     onClick={() => setSelectedViolation(violation.id)}
                   >
                     <td className="px-6 py-4 text-body">{formatDateTime(violation.timestamp)}</td>
-                    <td className="px-6 py-4 text-body">Kamera #{violation.camera_id}</td>
+                    <td className="px-6 py-4 text-body">Camera #{violation.camera_id}</td>
                     <td className="px-6 py-4">
                       <div className="flex flex-wrap gap-1">
                         {violation.missing_ppe.map((ppe, idx) => (
@@ -295,7 +295,7 @@ export default function Report() {
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
             <div className="bg-slate-800 rounded-2xl p-6 max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-section-title">İhlal Detayı</h3>
+                <h3 className="text-section-title">Violation Details</h3>
                 <button
                   onClick={() => setSelectedViolation(null)}
                   className="text-slate-400 hover:text-white"
@@ -308,7 +308,7 @@ export default function Report() {
                 {/* Frame Snapshot */}
                 {violation.frame_snapshot && (
                   <div>
-                    <h4 className="text-sm font-medium text-slate-300 mb-2">İhlal Anı Fotoğrafı</h4>
+                    <h4 className="text-sm font-medium text-slate-300 mb-2">Violation Snapshot</h4>
                     <img 
                       src={violation.frame_snapshot} 
                       alt="Violation snapshot"
@@ -320,15 +320,15 @@ export default function Report() {
                 {/* Violation Details */}
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <p className="text-caption text-slate-400 mb-1">Zaman</p>
+                    <p className="text-caption text-slate-400 mb-1">Time</p>
                     <p className="text-body">{formatDateTime(violation.timestamp)}</p>
                   </div>
                   <div>
-                    <p className="text-caption text-slate-400 mb-1">Kamera</p>
-                    <p className="text-body">Kamera #{violation.camera_id}</p>
+                    <p className="text-caption text-slate-400 mb-1">Camera</p>
+                    <p className="text-body">Camera #{violation.camera_id}</p>
                   </div>
                   <div>
-                    <p className="text-caption text-slate-400 mb-1">Eksik PPE</p>
+                    <p className="text-caption text-slate-400 mb-1">Missing PPE</p>
                     <div className="flex flex-wrap gap-1">
                       {violation.missing_ppe.map((ppe, idx) => (
                         <span key={idx} className="px-2 py-1 bg-red-500/20 text-red-400 rounded-md text-xs">
@@ -350,11 +350,11 @@ export default function Report() {
                       className="btn-primary"
                       onClick={() => handleAcknowledge(violation.id)}
                     >
-                      ✓ Onayla
+                      ✓ Acknowledge
                     </button>
                   )}
                   <button className="btn-secondary">
-                    Not Ekle
+                    Add Note
                   </button>
                 </div>
               </div>

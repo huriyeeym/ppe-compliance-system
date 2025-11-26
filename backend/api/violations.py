@@ -12,7 +12,7 @@ from datetime import datetime
 
 from backend.database.connection import get_db
 from backend.database import crud, schemas
-from backend.database.models import ViolationSeverity
+from backend.database.models import ViolationSeverity, ViolationStatus
 from backend.services.violation_service import ViolationService
 from backend.utils.logger import logger
 from backend.config import settings
@@ -25,8 +25,9 @@ router = APIRouter(prefix="/violations", tags=["Violations"])
 async def get_violations(
     domain_id: Optional[int] = Query(None, description="Filter by domain"),
     camera_id: Optional[int] = Query(None, description="Filter by camera"),
-    acknowledged: Optional[bool] = Query(None, description="Filter by acknowledgment status"),
+    status: Optional[ViolationStatus] = Query(None, description="Filter by workflow status"),
     severity: Optional[ViolationSeverity] = Query(None, description="Filter by severity"),
+    missing_ppe_type: Optional[str] = Query(None, description="Filter by missing PPE type (e.g., 'hard_hat', 'safety_vest')"),
     start_date: Optional[datetime] = Query(None, description="Filter by start date (ISO format)"),
     end_date: Optional[datetime] = Query(None, description="Filter by end date (ISO format)"),
     skip: int = Query(0, ge=0, description="Number of records to skip"),
@@ -39,8 +40,9 @@ async def get_violations(
     **Filters:**
     - **domain_id**: Show violations from specific domain
     - **camera_id**: Show violations from specific camera
-    - **acknowledged**: Show acknowledged/unacknowledged violations
+    - **status**: Filter by workflow status (open, in_progress, closed, false_positive)
     - **severity**: Filter by severity (critical, high, medium, low)
+    - **missing_ppe_type**: Filter by missing PPE type (e.g., 'hard_hat', 'safety_vest')
     - **start_date**: Violations after this date
     - **end_date**: Violations before this date
     
@@ -54,8 +56,9 @@ async def get_violations(
     filters = schemas.ViolationFilterParams(
         domain_id=domain_id,
         camera_id=camera_id,
-        acknowledged=acknowledged,
+        status=status,
         severity=severity,
+        missing_ppe_type=missing_ppe_type,
         start_date=start_date,
         end_date=end_date,
         skip=skip,
@@ -149,9 +152,15 @@ async def update_violation(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Update a violation (typically for acknowledgment)
+    Update a violation (workflow management)
     
-    Common use case:
+    **Workflow fields:**
+    - **status**: Change workflow status (open, in_progress, closed, false_positive)
+    - **assigned_to**: Assign to user (email/username)
+    - **notes**: Add notes/comments
+    - **corrective_action**: Describe corrective action taken
+    
+    **Legacy fields (deprecated):**
     - **acknowledged**: Mark violation as acknowledged
     - **acknowledged_by**: Username of person who acknowledged
     - **notes**: Add notes about the violation

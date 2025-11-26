@@ -242,14 +242,23 @@ async def get_violations(
         conditions.append(Violation.domain_id == filters.domain_id)
     if filters.camera_id:
         conditions.append(Violation.camera_id == filters.camera_id)
-    if filters.acknowledged is not None:
-        conditions.append(Violation.acknowledged == filters.acknowledged)
+    if filters.status:
+        conditions.append(Violation.status == filters.status)
     if filters.severity:
         conditions.append(Violation.severity == filters.severity)
+    if filters.missing_ppe_type:
+        # Filter by missing PPE type (search in JSON field)
+        # SQLite JSON search: missing_ppe JSON array contains {"type": "hard_hat"}
+        conditions.append(
+            Violation.missing_ppe.contains([{"type": filters.missing_ppe_type}])
+        )
     if filters.start_date:
         conditions.append(Violation.timestamp >= filters.start_date)
     if filters.end_date:
         conditions.append(Violation.timestamp <= filters.end_date)
+    # Legacy filter (deprecated)
+    if filters.acknowledged is not None:
+        conditions.append(Violation.acknowledged == filters.acknowledged)
     
     # Count query
     count_query = select(func.count(Violation.id))
@@ -287,16 +296,19 @@ async def create_violation(db: AsyncSession, violation: ViolationCreate) -> Viol
 
 
 async def update_violation(db: AsyncSession, violation_id: int, violation: ViolationUpdate) -> Optional[Violation]:
-    """Update a violation (typically for acknowledgment)"""
+    """Update a violation (workflow management)"""
     db_violation = await get_violation_by_id(db, violation_id)
     if not db_violation:
         return None
     
     update_data = violation.model_dump(exclude_unset=True)
     
-    # If acknowledging, set timestamp
+    # Legacy: If acknowledging, set timestamp (deprecated, use status instead)
     if update_data.get("acknowledged") and not db_violation.acknowledged:
         update_data["acknowledged_at"] = datetime.utcnow()
+        # Auto-set status to closed if acknowledging
+        if "status" not in update_data:
+            update_data["status"] = "closed"
     
     for key, value in update_data.items():
         setattr(db_violation, key, value)

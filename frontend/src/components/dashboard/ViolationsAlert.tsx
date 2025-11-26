@@ -82,12 +82,12 @@ export default function ViolationsAlert({ domainId }: ViolationsAlertProps) {
 
   const getPPEDisplayName = (type: string) => {
     const names: Record<string, string> = {
-      hard_hat: 'Baret',
-      safety_vest: 'Yelek',
-      safety_glasses: 'Gözlük',
-      face_mask: 'Maske',
-      safety_boots: 'Bot',
-      gloves: 'Eldiven',
+      hard_hat: 'Hard Hat',
+      safety_vest: 'Safety Vest',
+      safety_glasses: 'Safety Glasses',
+      face_mask: 'Face Mask',
+      safety_boots: 'Safety Boots',
+      gloves: 'Gloves',
     }
     return names[type] || type
   }
@@ -113,14 +113,14 @@ export default function ViolationsAlert({ domainId }: ViolationsAlertProps) {
 
   return (
     <div className="space-y-6">
-      {/* Son İhlaller - Real-time */}
+      {/* Recent Violations - Real-time */}
       <div className="card">
-        <h3 className="text-section-title mb-4">Son İhlaller</h3>
+        <h3 className="text-section-title mb-4">Recent Violations</h3>
         <div className="space-y-2">
           {alerts.length === 0 ? (
             <div className="text-center py-8 text-slate-500">
               <div className="text-3xl mb-2 opacity-30">✅</div>
-              <p className="text-body">Son 24 saatte ihlal yok</p>
+              <p className="text-body">No violations in the last 24 hours</p>
             </div>
           ) : (
             alerts.map((alert) => (
@@ -136,18 +136,18 @@ export default function ViolationsAlert({ domainId }: ViolationsAlertProps) {
                       </span>
                     ))}
                     <span className="px-2 py-0.5 bg-red-500/20 text-red-400 rounded text-xs font-medium">
-                      {alert.severity === 'critical' ? 'Kritik' : alert.severity === 'high' ? 'Yüksek' : 'Orta'}
+                      {alert.severity === 'critical' ? 'Critical' : alert.severity === 'high' ? 'High' : 'Medium'}
                     </span>
                   </div>
                   <p className="text-body font-medium">
-                    {alert.missing_ppe.map(ppe => getPPEDisplayName(ppe.type)).join(', ')} eksik
+                    Missing: {alert.missing_ppe.map(ppe => getPPEDisplayName(ppe.type)).join(', ')}
                   </p>
                   <p className="text-caption text-slate-500">
-                    Kamera #{alert.camera_id} • {formatTime(alert.timestamp)}
+                    Camera #{alert.camera_id} • {formatTime(alert.timestamp)}
                   </p>
                 </div>
                 <button className="btn-ghost text-xs px-3 py-1 ml-2">
-                  Detay
+                  Details
                 </button>
               </div>
             ))
@@ -155,13 +155,13 @@ export default function ViolationsAlert({ domainId }: ViolationsAlertProps) {
         </div>
       </div>
 
-      {/* İhlal Geçmişi */}
+      {/* Violation History */}
       <div className="card">
-        <h3 className="text-section-title mb-4">İhlal Geçmişi</h3>
+        <h3 className="text-section-title mb-4">Violation History</h3>
         <div className="space-y-1 max-h-96 overflow-y-auto">
           {logs.length === 0 ? (
             <div className="text-center py-8 text-slate-500">
-              <p className="text-body">Geçmiş ihlal yok</p>
+              <p className="text-body">No violation history</p>
             </div>
           ) : (
             logs.map((log) => (
@@ -177,7 +177,7 @@ export default function ViolationsAlert({ domainId }: ViolationsAlertProps) {
                     <p className="text-body">
                       {log.missing_ppe[0] && getPPEDisplayName(log.missing_ppe[0].type)}
                     </p>
-                    <p className="text-caption text-slate-500">Kamera #{log.camera_id}</p>
+                    <p className="text-caption text-slate-500">Camera #{log.camera_id}</p>
                   </div>
                 </div>
                 <p className="text-caption text-slate-500">{formatTime(log.timestamp)}</p>

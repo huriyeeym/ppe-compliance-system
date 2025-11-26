@@ -42,6 +42,14 @@ class ViolationSeverity(str, Enum):
     LOW = "low"
 
 
+class ViolationStatus(str, Enum):
+    """Violation workflow status"""
+    OPEN = "open"                    # New violation, not yet reviewed
+    IN_PROGRESS = "in_progress"      # Being investigated/resolved
+    CLOSED = "closed"                # Resolved/acknowledged
+    FALSE_POSITIVE = "false_positive"  # Incorrect detection
+
+
 class UserRole(str, Enum):
     """Application user roles"""
     SUPER_ADMIN = "super_admin"  # Full system access
@@ -169,11 +177,16 @@ class Violation(Base):
     frame_snapshot = Column(Text, nullable=True)             # Legacy base64 snapshot (deprecated)
     snapshot_path = Column(String(300), nullable=True)       # Relative file path under data/snapshots
     
-    # Acknowledgment
+    # Workflow & Management
+    status = Column(SQLEnum(ViolationStatus, native_enum=False), default=ViolationStatus.OPEN, index=True)
+    assigned_to = Column(String(100), nullable=True)         # User email/username
+    notes = Column(Text, nullable=True)                      # User notes
+    corrective_action = Column(Text, nullable=True)          # Description of corrective action taken
+    
+    # Legacy acknowledgment (deprecated, use status instead)
     acknowledged = Column(Boolean, default=False, index=True)
     acknowledged_by = Column(String(100), nullable=True)     # Username (future)
     acknowledged_at = Column(DateTime, nullable=True)
-    notes = Column(Text, nullable=True)                      # User notes
     
     created_at = Column(DateTime, default=datetime.utcnow)
     

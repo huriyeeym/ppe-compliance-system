@@ -6,7 +6,7 @@ Separate from SQLAlchemy models for clean API layer
 from pydantic import BaseModel, Field, ConfigDict, EmailStr
 from typing import Optional, List
 from datetime import datetime
-from backend.database.models import DomainStatus, SourceType, ViolationSeverity, UserRole
+from backend.database.models import DomainStatus, SourceType, ViolationSeverity, ViolationStatus, UserRole
 
 
 # ==========================================
@@ -163,6 +163,10 @@ class ViolationBase(BaseModel):
     track_id: Optional[int] = Field(None, description="Tracker ID for the detected person")
     confidence: float = Field(..., ge=0.0, le=1.0)
     severity: ViolationSeverity = Field(default=ViolationSeverity.MEDIUM)
+    status: ViolationStatus = Field(default=ViolationStatus.OPEN, description="Workflow status")
+    assigned_to: Optional[str] = Field(None, max_length=100, description="Assigned user email/username")
+    notes: Optional[str] = Field(None, description="User notes")
+    corrective_action: Optional[str] = Field(None, description="Corrective action taken")
     frame_snapshot: Optional[str] = Field(
         default=None,
         description="Base64 snapshot payload (deprecated, kept for backward compatibility)"
@@ -179,20 +183,28 @@ class ViolationCreate(ViolationBase):
 
 
 class ViolationUpdate(BaseModel):
-    """Schema for updating a violation (acknowledgment)"""
+    """Schema for updating a violation (workflow management)"""
+    status: Optional[ViolationStatus] = None
+    assigned_to: Optional[str] = Field(None, max_length=100)
+    notes: Optional[str] = None
+    corrective_action: Optional[str] = None
+    # Legacy fields (deprecated)
     acknowledged: Optional[bool] = None
     acknowledged_by: Optional[str] = Field(None, max_length=100)
-    notes: Optional[str] = None
 
 
 class ViolationResponse(ViolationBase):
     """Schema for violation response"""
     id: int
     timestamp: datetime
+    status: ViolationStatus
+    assigned_to: Optional[str]
+    notes: Optional[str]
+    corrective_action: Optional[str]
+    # Legacy fields (deprecated)
     acknowledged: bool
     acknowledged_by: Optional[str]
     acknowledged_at: Optional[datetime]
-    notes: Optional[str]
     created_at: datetime
     
     model_config = ConfigDict(from_attributes=True)
@@ -206,12 +218,15 @@ class ViolationFilterParams(BaseModel):
     """Query parameters for filtering violations"""
     domain_id: Optional[int] = Field(None, gt=0)
     camera_id: Optional[int] = Field(None, gt=0)
-    acknowledged: Optional[bool] = None
+    status: Optional[ViolationStatus] = None
     severity: Optional[ViolationSeverity] = None
+    missing_ppe_type: Optional[str] = Field(None, description="Filter by missing PPE type (e.g., 'hard_hat', 'safety_vest')")
     start_date: Optional[datetime] = None
     end_date: Optional[datetime] = None
     skip: int = Field(default=0, ge=0)
     limit: int = Field(default=50, ge=1, le=100)
+    # Legacy field (deprecated)
+    acknowledged: Optional[bool] = None
 
 
 class PaginatedResponse(BaseModel):

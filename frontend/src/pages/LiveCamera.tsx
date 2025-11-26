@@ -80,6 +80,11 @@ export default function LiveCamera() {
 
     // Database'e kaydet
     try {
+      let frameSnapshot = violation.frame_snapshot
+      if (frameSnapshot && frameSnapshot.length > 500) {
+        frameSnapshot = frameSnapshot.slice(0, 500)
+      }
+
       await violationService.create({
         camera_id: selectedCamera.id,
         domain_id: selectedDomain.id,
@@ -92,7 +97,7 @@ export default function LiveCamera() {
           priority: 1,
         })),
         confidence: violation.confidence || 0.9,
-        frame_snapshot: violation.frame_snapshot,
+        frame_snapshot: frameSnapshot,
       })
       logger.info('Violation saved to database')
     } catch (err) {

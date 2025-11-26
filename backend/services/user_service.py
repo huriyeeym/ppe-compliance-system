@@ -53,14 +53,14 @@ class UserService:
 
     async def ensure_default_admin(self):
         """Create default admin if none exists"""
-        existing = await self.get_by_email("admin@ppe.local")
+        existing = await self.get_by_email("admin@safevision.io")
         if existing:
             return existing
         admin = schemas.UserCreate(
-            email="admin@ppe.local",
+            email="admin@safevision.io",
             full_name="System Admin",
             password="admin123",
-            role=UserRole.ADMIN,
+            role=UserRole.SUPER_ADMIN,
             is_active=True,
         )
         return await self.create_user(admin)
