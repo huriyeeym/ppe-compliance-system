@@ -6,19 +6,29 @@ interface LiveVideoStreamProps {
   cameraId: number
   isStreaming: boolean
   domainId: string
-  onViolationDetected?: (violation: Violation) => void
+  onDetectionComplete?: (result: DetectionResult) => void
 }
 
-interface Violation {
-  timestamp: string
-  missing_ppe: string[]
-  person_bbox: { x: number; y: number; w: number; h: number }
-  confidence: number
+interface DetectionResult {
+  detections: Detection[]
+  violations_recorded: RecordedViolation[]
+  recording_stats: {
+    total_recordings: number
+    active_sessions: number
+    recording_rate: number
+  }
   frame_snapshot?: string
+}
+
+interface RecordedViolation {
+  track_id: number
+  reason: string
+  snapshot_path: string
 }
 
 interface Detection {
   person_id: number
+  track_id: number | null
   bbox: { x: number; y: number; w: number; h: number }
   ppe_status: {
     hard_hat: { detected: boolean; confidence: number }
@@ -28,26 +38,26 @@ interface Detection {
 }
 
 /**
- * Canlı Video Stream Component
- * 
- * İnşaat Alanı için Gerçek Workflow:
- * 1. Webcam stream başlat
- * 2. Backend'e frame gönder (WebSocket veya REST)
- * 3. Backend YOLOv8 ile detection yapar
- * 4. Detection sonuçları geri gelir
- * 5. Canvas overlay ile çiz:
- *    - Person bounding box (yeşil: uyumlu, kırmızı: ihlal)
- *    - PPE status badges (✓ Baret, ✗ Yelek)
- * 6. İhlal varsa:
- *    - onViolationDetected callback çağır
- *    - Frame snapshot kaydet
- *    - Database'e violation kaydı oluştur
+ * Live Video Stream Component
+ *
+ * Real workflow for construction site:
+ * 1. Start webcam stream
+ * 2. Send frames to backend (WebSocket or REST)
+ * 3. Backend performs YOLOv8 detection
+ * 4. Detection results are returned
+ * 5. Draw with canvas overlay:
+ *    - Person bounding box (green: compliant, red: violation)
+ *    - PPE status badges (✓ Hard Hat, ✗ Safety Vest)
+ * 6. If violation detected:
+ *    - Call onViolationDetected callback
+ *    - Save frame snapshot
+ *    - Create violation record in database
  */
-export default function LiveVideoStream({ 
-  cameraId, 
-  isStreaming, 
+export default function LiveVideoStream({
+  cameraId,
+  isStreaming,
   domainId,
-  onViolationDetected 
+  onDetectionComplete
 }: LiveVideoStreamProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -56,10 +66,10 @@ export default function LiveVideoStream({
   const [detectionFps, setDetectionFps] = useState(0)
   const detectionCanvasRef = useRef<HTMLCanvasElement | null>(null)
 
-  // Webcam stream başlat
+  // Start webcam stream
   useEffect(() => {
     if (!isStreaming) {
-      // Stream durdur
+      // Stop stream
       if (videoRef.current?.srcObject) {
         const stream = videoRef.current.srcObject as MediaStream
         stream.getTracks().forEach(track => track.stop())
@@ -75,7 +85,7 @@ export default function LiveVideoStream({
         }
       })
       .catch((err) => {
-        logger.error('Webcam erişim hatası', err)
+        logger.error('Webcam access error', err)
       })
 
     return () => {
@@ -98,11 +108,21 @@ export default function LiveVideoStream({
     let lastDetectionTime = performance.now()
 
     const runDetection = async () => {
-      if (!videoRef.current) return
+      if (!videoRef.current) {
+        console.log('[LiveVideoStream] runDetection: no video ref')
+        return
+      }
       const video = videoRef.current
 
-      if (!video.videoWidth || !video.videoHeight) return
-      if (detecting) return
+      if (!video.videoWidth || !video.videoHeight) {
+        console.log('[LiveVideoStream] runDetection: video not ready')
+        return
+      }
+      if (detecting) {
+        console.log('[LiveVideoStream] runDetection: already detecting, skipping')
+        return
+      }
+      console.log('[LiveVideoStream] runDetection: starting detection...')
 
       if (!detectionCanvasRef.current) {
         detectionCanvasRef.current = document.createElement('canvas')
@@ -123,6 +143,7 @@ export default function LiveVideoStream({
         }
         try {
           const result = await detectionService.detectFrame(blob)
+          console.log('[LiveVideoStream] API Response received:', result)
           if (!isMounted) return
 
           const rawDetections = Array.isArray(result?.detections) ? result.detections : []
@@ -138,6 +159,7 @@ export default function LiveVideoStream({
 
             return {
               person_id: det.person_id ?? index + 1,
+              track_id: det.track_id ?? null,
               bbox: det.bbox,
               ppe_status: {
                 hard_hat: {
@@ -159,30 +181,39 @@ export default function LiveVideoStream({
           setDetectionFps(Math.round(1000 / Math.max(elapsed, 1)))
           lastDetectionTime = now
 
-          if (onViolationDetected) {
-            mappedDetections.forEach((det) => {
-              if (det.compliance) return
-              const missing: string[] = []
-              if (!det.ppe_status.hard_hat.detected) missing.push('hard_hat')
-              if (!det.ppe_status.safety_vest.detected) missing.push('safety_vest')
-              if (missing.length === 0) return
-
-              const overlayCanvas = canvasRef.current
-              let frameSnapshot: string | undefined
-              if (overlayCanvas) {
-                frameSnapshot = overlayCanvas.toDataURL('image/jpeg', 0.8)
-              }
-
-              onViolationDetected({
-                timestamp: new Date().toISOString(),
-                missing_ppe: missing,
-                person_bbox: det.bbox,
-                confidence: det.ppe_status.hard_hat.confidence || det.ppe_status.safety_vest.confidence,
-                frame_snapshot: frameSnapshot,
-              })
+          // ✅ Pass full backend response to parent (includes smart recording decisions)
+          if (onDetectionComplete) {
+            console.log('[LiveVideoStream] About to call onDetectionComplete with:', {
+              detections_count: mappedDetections.length,
+              violations_recorded_count: result.violations_recorded?.length || 0,
+              recording_stats: result.recording_stats
             })
+            const overlayCanvas = canvasRef.current
+            let frameSnapshot: string | undefined
+            if (overlayCanvas) {
+              frameSnapshot = overlayCanvas.toDataURL('image/jpeg', 0.8)
+            }
+
+            try {
+              onDetectionComplete({
+                detections: mappedDetections,
+                violations_recorded: result.violations_recorded || [],
+                recording_stats: result.recording_stats || {
+                  total_recordings: 0,
+                  active_sessions: 0,
+                  recording_rate: 0
+                },
+                frame_snapshot: frameSnapshot
+              })
+              console.log('[LiveVideoStream] onDetectionComplete called successfully')
+            } catch (callbackErr) {
+              console.error('[LiveVideoStream] Error in onDetectionComplete callback:', callbackErr)
+            }
+          } else {
+            console.warn('[LiveVideoStream] onDetectionComplete callback is not defined!')
           }
         } catch (err) {
+          console.error('[LiveVideoStream] Detection failed:', err)
           logger.error('Detection failed', err)
         } finally {
           detecting = false
@@ -196,7 +227,7 @@ export default function LiveVideoStream({
       isMounted = false
       clearInterval(interval)
     }
-  }, [isStreaming, cameraId, domainId, onViolationDetected])
+  }, [isStreaming, cameraId, domainId, onDetectionComplete])
 
   // Video FPS hesapla
   useEffect(() => {
@@ -236,7 +267,7 @@ export default function LiveVideoStream({
         }
       }
 
-      // Temizle
+      // Clear
       ctx.clearRect(0, 0, canvas.width, canvas.height)
 
       // Detection overlay çiz
@@ -248,24 +279,24 @@ export default function LiveVideoStream({
         ctx.lineWidth = 3
         ctx.strokeRect(bbox.x, bbox.y, bbox.w, bbox.h)
 
-        // PPE status badges - İnşaat için: Baret ve Yelek
+        // PPE status badges - For construction: Hard Hat and Safety Vest
         const badgeY = bbox.y - 35
         let badgeX = bbox.x
 
-        // Baret durumu
+        // Hard hat status
         if (ppe_status.hard_hat.detected) {
           ctx.fillStyle = '#10B981'
           ctx.fillRect(badgeX, badgeY, 70, 25)
           ctx.fillStyle = '#FFFFFF'
           ctx.font = 'bold 12px sans-serif'
-          ctx.fillText('✓ Baret', badgeX + 5, badgeY + 17)
+          ctx.fillText('✓ Hard Hat', badgeX + 5, badgeY + 17)
           badgeX += 75
         } else {
           ctx.fillStyle = '#EF4444'
           ctx.fillRect(badgeX, badgeY, 70, 25)
           ctx.fillStyle = '#FFFFFF'
           ctx.font = 'bold 12px sans-serif'
-          ctx.fillText('✗ Baret', badgeX + 5, badgeY + 17)
+          ctx.fillText('✗ Hard Hat', badgeX + 5, badgeY + 17)
           badgeX += 75
         }
 
@@ -275,13 +306,13 @@ export default function LiveVideoStream({
           ctx.fillRect(badgeX, badgeY, 70, 25)
           ctx.fillStyle = '#FFFFFF'
           ctx.font = 'bold 12px sans-serif'
-          ctx.fillText('✓ Yelek', badgeX + 5, badgeY + 17)
+          ctx.fillText('✓ Safety Vest', badgeX + 5, badgeY + 17)
         } else {
           ctx.fillStyle = '#EF4444'
           ctx.fillRect(badgeX, badgeY, 70, 25)
           ctx.fillStyle = '#FFFFFF'
           ctx.font = 'bold 12px sans-serif'
-          ctx.fillText('✗ Yelek', badgeX + 5, badgeY + 17)
+          ctx.fillText('✗ Safety Vest', badgeX + 5, badgeY + 17)
         }
 
         // Person ID
@@ -302,15 +333,15 @@ export default function LiveVideoStream({
     <div className="card">
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h3 className="text-section-title">Canlı Video Stream</h3>
+          <h3 className="text-section-title">Live Video Stream</h3>
           <p className="text-caption text-slate-500 mt-1">
-            {isStreaming ? `Video: ${fps} FPS • Detection: ${detectionFps} FPS` : 'Durduruldu'}
+            {isStreaming ? `Video: ${fps} FPS • Detection: ${detectionFps} FPS` : 'Stopped'}
           </p>
         </div>
         <div className="flex items-center gap-2">
           <div className={`w-3 h-3 rounded-full ${isStreaming ? 'bg-green-400 animate-pulse' : 'bg-slate-500'}`}></div>
           <span className="text-caption text-slate-400">
-            {isStreaming ? 'Canlı' : 'Offline'}
+            {isStreaming ? 'Live' : 'Offline'}
           </span>
         </div>
       </div>
@@ -335,9 +366,9 @@ export default function LiveVideoStream({
           <div className="aspect-video flex items-center justify-center">
             <div className="text-center">
               <div className="text-6xl mb-4 opacity-30">📹</div>
-              <p className="text-body text-slate-500">Video stream başlatılmadı</p>
+              <p className="text-body text-slate-500">Video stream not started</p>
               <p className="text-caption text-slate-600 mt-1">
-                "Başlat" butonuna tıklayarak webcam'i aktif edin
+                Click the "Start" button to activate the webcam
               </p>
             </div>
           </div>
@@ -347,11 +378,11 @@ export default function LiveVideoStream({
         {isStreaming && detections.length > 0 && (
           <div className="absolute bottom-4 left-4 bg-slate-900/90 px-3 py-2 rounded-lg">
             <p className="text-xs text-slate-300">
-              {detections.length} kişi tespit edildi
+              {detections.length} people detected
             </p>
             <p className="text-xs text-slate-500">
-              {detections.filter(d => d.compliance).length} uyumlu,{' '}
-              {detections.filter(d => !d.compliance).length} ihlal
+              {detections.filter(d => d.compliance).length} compliant,{' '}
+              {detections.filter(d => !d.compliance).length} violations
             </p>
           </div>
         )}
@@ -361,11 +392,11 @@ export default function LiveVideoStream({
       <div className="mt-4 flex items-center gap-4 text-xs text-slate-400">
         <div className="flex items-center gap-2">
           <div className="w-4 h-4 border-2 border-green-400"></div>
-          <span>Uyumlu (Baret + Yelek var)</span>
+          <span>Compliant (Hard Hat + Vest present)</span>
         </div>
         <div className="flex items-center gap-2">
           <div className="w-4 h-4 border-2 border-red-400"></div>
-          <span>İhlal (Baret veya Yelek eksik)</span>
+          <span>Violation (Hard Hat or Vest missing)</span>
         </div>
       </div>
     </div>

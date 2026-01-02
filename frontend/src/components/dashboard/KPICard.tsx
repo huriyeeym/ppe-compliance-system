@@ -1,7 +1,9 @@
+import type { ReactNode } from 'react'
+
 interface KPICardProps {
   title: string
   value: string
-  icon: string
+  icon: ReactNode
   trend?: string
   color?: 'success' | 'warning' | 'danger' | 'info'
 }

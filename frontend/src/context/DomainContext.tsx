@@ -1,4 +1,5 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react'
+import { createContext, useContext, useState, useEffect } from 'react'
+import type { ReactNode } from 'react'
 import { domainService, type Domain } from '../lib/api/services/domainService'
 import { logger } from '../lib/utils/logger'
 

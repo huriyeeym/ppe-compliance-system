@@ -118,7 +118,7 @@ class HttpClient {
       
       return Promise.reject({
         type: 'NETWORK_ERROR',
-        message: 'Bağlantı hatası. Lütfen internet bağlantınızı kontrol edin.',
+        message: 'Connection error. Please check your internet connection.',
         originalError: error,
       })
     }
@@ -126,7 +126,7 @@ class HttpClient {
     const { status, data } = error.response
 
     // Transform backend error response
-    const errorMessage = (data as any)?.detail || error.message || 'Bilinmeyen hata'
+    const errorMessage = (data as any)?.detail || error.message || 'Unknown error'
 
     console.error('[API Response Error]', {
       status,
@@ -141,37 +141,48 @@ class HttpClient {
         // TODO: Implement auth redirect
         return Promise.reject({
           type: 'UNAUTHORIZED',
-          message: 'Oturum süreniz dolmuş. Lütfen tekrar giriş yapın.',
+          message: 'Your session has expired. Please login again.',
           status,
         })
-      
+
       case 403:
         return Promise.reject({
           type: 'FORBIDDEN',
-          message: 'Bu işlem için yetkiniz bulunmamaktadır.',
+          message: 'You do not have permission for this operation.',
           status,
         })
-      
+
       case 404:
         return Promise.reject({
           type: 'NOT_FOUND',
-          message: 'İstenen kaynak bulunamadı.',
+          message: 'The requested resource was not found.',
           status,
         })
       
       case 422:
         // Validation error
+        // FastAPI returns detail as array of error objects
+        const validationErrors = Array.isArray((data as any)?.detail)
+          ? (data as any).detail
+          : []
+
+        // Extract first error message if available
+        const firstError = validationErrors[0]
+        const validationMessage = firstError?.msg || errorMessage
+
+        console.error('[Validation Error Details]', validationErrors)
+
         return Promise.reject({
           type: 'VALIDATION_ERROR',
-          message: errorMessage,
-          errors: (data as any)?.errors || [],
+          message: validationMessage,
+          errors: validationErrors,
           status,
         })
       
       case 500:
         return Promise.reject({
           type: 'SERVER_ERROR',
-          message: 'Sunucu hatası. Lütfen daha sonra tekrar deneyin.',
+          message: 'Server error. Please try again later.',
           status,
         })
       

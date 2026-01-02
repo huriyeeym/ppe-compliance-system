@@ -9,15 +9,11 @@
  */
 
 import { useState, useEffect, useMemo } from 'react'
-import { 
-  AlertTriangle, 
-  CheckCircle2, 
-  XCircle, 
-  Clock, 
-  Filter,
+import {
+  CheckCircle2,
+  XCircle,
+  Clock,
   Search,
-  Calendar,
-  Camera,
   MapPin,
   Eye,
   Edit,
@@ -27,6 +23,7 @@ import { violationService, type Violation, type ViolationFilters } from '../lib/
 import { domainService, type Domain } from '../lib/api/services/domainService'
 import { cameraService, type Camera } from '../lib/api/services/cameraService'
 import { logger } from '../lib/utils/logger'
+import CustomSelect from '../components/common/CustomSelect'
 
 type ViolationStatus = 'open' | 'in_progress' | 'closed' | 'false_positive'
 type ViolationSeverity = 'critical' | 'high' | 'medium' | 'low'
@@ -179,16 +176,16 @@ function ViolationDetailModal({ violation, domains, cameras, onClose, onUpdate }
           {/* Status */}
           <div>
             <label className="text-sm font-medium text-gray-700 mb-2 block">Status</label>
-            <select
+            <CustomSelect
               value={status}
-              onChange={(e) => setStatus(e.target.value as ViolationStatus)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            >
-              <option value="open">Open</option>
-              <option value="in_progress">In Progress</option>
-              <option value="closed">Closed</option>
-              <option value="false_positive">False Positive</option>
-            </select>
+              onChange={(val) => setStatus(val as ViolationStatus)}
+              options={[
+                { value: 'open', label: 'Open' },
+                { value: 'in_progress', label: 'In Progress' },
+                { value: 'closed', label: 'Closed' },
+                { value: 'false_positive', label: 'False Positive' }
+              ]}
+            />
           </div>
 
           {/* Assigned To */}
@@ -199,7 +196,7 @@ function ViolationDetailModal({ violation, domains, cameras, onClose, onUpdate }
               value={assignedTo}
               onChange={(e) => setAssignedTo(e.target.value)}
               placeholder="User email or username"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#405189]/20 focus:border-[#405189] transition-all"
             />
           </div>
 
@@ -211,7 +208,7 @@ function ViolationDetailModal({ violation, domains, cameras, onClose, onUpdate }
               onChange={(e) => setNotes(e.target.value)}
               rows={4}
               placeholder="Add notes or comments..."
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#405189]/20 focus:border-[#405189] transition-all"
             />
           </div>
 
@@ -223,7 +220,7 @@ function ViolationDetailModal({ violation, domains, cameras, onClose, onUpdate }
               onChange={(e) => setCorrectiveAction(e.target.value)}
               rows={3}
               placeholder="Describe corrective action taken..."
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#405189]/20 focus:border-[#405189] transition-all"
             />
           </div>
         </div>
@@ -239,7 +236,7 @@ function ViolationDetailModal({ violation, domains, cameras, onClose, onUpdate }
           <button
             onClick={handleSave}
             disabled={saving}
-            className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {saving ? 'Saving...' : 'Save Changes'}
           </button>
@@ -263,6 +260,13 @@ export default function Events() {
     limit: 50,
   })
   const [total, setTotal] = useState(0)
+  const [selectedLocation, setSelectedLocation] = useState<string>('')
+  const [selectedCameraId, setSelectedCameraId] = useState<number | null>(null)
+  const [searchQuery, setSearchQuery] = useState<string>('')
+  const [dateRange, setDateRange] = useState<{ start: string; end: string }>({
+    start: '',
+    end: '',
+  })
 
   // Load domains and cameras
   useEffect(() => {
@@ -299,6 +303,62 @@ export default function Events() {
     }
     loadViolations()
   }, [filters])
+
+  // Extract unique locations from cameras
+  const uniqueLocations = useMemo(() => {
+    const locations = cameras
+      .map(c => c.location)
+      .filter((loc): loc is string => !!loc && loc.trim() !== '')
+    return Array.from(new Set(locations)).sort()
+  }, [cameras])
+
+  // Enhanced filtering with search, date range, camera, and location
+  const filteredViolations = useMemo(() => {
+    let filtered = [...violations]
+
+    // Filter by location (zone)
+    if (selectedLocation) {
+      const camerasInLocation = cameras
+        .filter(c => c.location === selectedLocation)
+        .map(c => c.id)
+      filtered = filtered.filter(v => camerasInLocation.includes(v.camera_id))
+    }
+
+    // Filter by specific camera
+    if (selectedCameraId) {
+      filtered = filtered.filter(v => v.camera_id === selectedCameraId)
+    }
+
+    // Filter by date range
+    if (dateRange.start) {
+      const startDate = new Date(dateRange.start)
+      filtered = filtered.filter(v => new Date(v.timestamp) >= startDate)
+    }
+    if (dateRange.end) {
+      const endDate = new Date(dateRange.end)
+      endDate.setHours(23, 59, 59, 999) // Include the entire end day
+      filtered = filtered.filter(v => new Date(v.timestamp) <= endDate)
+    }
+
+    // Filter by search query (ID, camera name, PPE type)
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase()
+      filtered = filtered.filter(v => {
+        const camera = cameras.find(c => c.id === v.camera_id)
+        const cameraName = camera?.name.toLowerCase() || ''
+        const violationId = v.id.toString()
+        const ppeTypes = v.missing_ppe.map(p => p.type.toLowerCase()).join(' ')
+
+        return (
+          violationId.includes(query) ||
+          cameraName.includes(query) ||
+          ppeTypes.includes(query)
+        )
+      })
+    }
+
+    return filtered
+  }, [violations, selectedLocation, selectedCameraId, dateRange, searchQuery, cameras])
 
   const handleUpdateViolation = async (violationId: number, updates: Partial<Violation>) => {
     try {
@@ -355,67 +415,122 @@ export default function Events() {
         </div>
         <div className="flex items-center gap-2">
           <span className="text-sm text-gray-600">
+            {(searchQuery || selectedLocation || selectedCameraId || dateRange.start || dateRange.end) && (
+              <>
+                Showing: <span className="font-medium text-[#405189]">{filteredViolations.length}</span> of{' '}
+              </>
+            )}
             Total: <span className="font-medium">{total}</span>
           </span>
         </div>
       </div>
 
       {/* Filters */}
-      <div className="bg-white rounded-lg border border-gray-200 p-4">
+      <div className="bg-white rounded-lg border border-gray-200 p-4 space-y-4">
+        {/* Row 1: Search and Date Range */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Domain</label>
-            <select
-              value={filters.domain_id || ''}
-              onChange={(e) => setFilters({ ...filters, domain_id: e.target.value ? Number(e.target.value) : undefined, skip: 0 })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            >
-              <option value="">All Domains</option>
-              {domains.map((d) => (
-                <option key={d.id} value={d.id}>{d.name}</option>
-              ))}
-            </select>
+          <div className="md:col-span-2">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Search</label>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search by ID, camera, or PPE type..."
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#405189]/20 focus:border-[#405189] transition-all"
+              />
+            </div>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
-            <select
-              value={filters.status || ''}
-              onChange={(e) => setFilters({ ...filters, status: e.target.value as ViolationStatus || undefined, skip: 0 })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            >
-              <option value="">All Status</option>
-              <option value="open">Open</option>
-              <option value="in_progress">In Progress</option>
-              <option value="closed">Closed</option>
-              <option value="false_positive">False Positive</option>
-            </select>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
+            <input
+              type="date"
+              value={dateRange.start}
+              onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#405189]/20 focus:border-[#405189] transition-all"
+            />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Severity</label>
-            <select
-              value={filters.severity || ''}
-              onChange={(e) => setFilters({ ...filters, severity: e.target.value as ViolationSeverity || undefined, skip: 0 })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            >
-              <option value="">All Severities</option>
-              <option value="critical">Critical</option>
-              <option value="high">High</option>
-              <option value="medium">Medium</option>
-              <option value="low">Low</option>
-            </select>
+            <label className="block text-sm font-medium text-gray-700 mb-1">End Date</label>
+            <input
+              type="date"
+              value={dateRange.end}
+              onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#405189]/20 focus:border-[#405189] transition-all"
+            />
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Missing PPE</label>
-            <select
-              value={filters.missing_ppe_type || ''}
-              onChange={(e) => setFilters({ ...filters, missing_ppe_type: e.target.value || undefined, skip: 0 })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            >
-              <option value="">All Types</option>
-              <option value="hard_hat">Hard Hat</option>
-              <option value="safety_vest">Safety Vest</option>
-            </select>
-          </div>
+        </div>
+
+        {/* Row 2: Dropdowns */}
+        <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
+          <CustomSelect
+            label="Domain"
+            value={filters.domain_id || ''}
+            onChange={(val) => setFilters({ ...filters, domain_id: val ? Number(val) : undefined, skip: 0 })}
+            options={[
+              { value: '', label: 'All Domains' },
+              ...domains.map(d => ({ value: d.id, label: d.name }))
+            ]}
+            placeholder="All Domains"
+          />
+          <CustomSelect
+            label="Camera"
+            value={selectedCameraId || ''}
+            onChange={(val) => setSelectedCameraId(val ? Number(val) : null)}
+            options={[
+              { value: '', label: 'All Cameras' },
+              ...cameras.map(c => ({ value: c.id, label: c.name }))
+            ]}
+            placeholder="All Cameras"
+          />
+          <CustomSelect
+            label="Zone"
+            value={selectedLocation}
+            onChange={setSelectedLocation}
+            options={[
+              { value: '', label: 'All Zones' },
+              ...uniqueLocations.map(l => ({ value: l, label: l }))
+            ]}
+            placeholder="All Zones"
+          />
+          <CustomSelect
+            label="Status"
+            value={filters.status || ''}
+            onChange={(val) => setFilters({ ...filters, status: val as ViolationStatus || undefined, skip: 0 })}
+            options={[
+              { value: '', label: 'All Status' },
+              { value: 'open', label: 'Open' },
+              { value: 'in_progress', label: 'In Progress' },
+              { value: 'closed', label: 'Closed' },
+              { value: 'false_positive', label: 'False Positive' }
+            ]}
+            placeholder="All Status"
+          />
+          <CustomSelect
+            label="Severity"
+            value={filters.severity || ''}
+            onChange={(val) => setFilters({ ...filters, severity: val as ViolationSeverity || undefined, skip: 0 })}
+            options={[
+              { value: '', label: 'All Severities' },
+              { value: 'critical', label: 'Critical' },
+              { value: 'high', label: 'High' },
+              { value: 'medium', label: 'Medium' },
+              { value: 'low', label: 'Low' }
+            ]}
+            placeholder="All Severities"
+          />
+          <CustomSelect
+            label="PPE Type"
+            value={filters.missing_ppe_type || ''}
+            onChange={(val) => setFilters({ ...filters, missing_ppe_type: val || undefined, skip: 0 })}
+            options={[
+              { value: '', label: 'All Types' },
+              { value: 'hard_hat', label: 'Hard Hat' },
+              { value: 'safety_vest', label: 'Safety Vest' }
+            ]}
+            placeholder="All Types"
+          />
         </div>
       </div>
 
@@ -425,8 +540,10 @@ export default function Events() {
           <div className="p-8 text-center text-gray-500">Loading violations...</div>
         ) : error ? (
           <div className="p-8 text-center text-red-500">{error}</div>
-        ) : violations.length === 0 ? (
-          <div className="p-8 text-center text-gray-500">No violations found</div>
+        ) : filteredViolations.length === 0 ? (
+          <div className="p-8 text-center text-gray-500">
+            {selectedLocation ? `No violations found in ${selectedLocation}` : 'No violations found'}
+          </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full">
@@ -436,6 +553,7 @@ export default function Events() {
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Timestamp</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Domain</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Camera</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Location</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Missing PPE</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Severity</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
@@ -444,7 +562,7 @@ export default function Events() {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {violations.map((violation) => {
+                {filteredViolations.map((violation) => {
                   const domain = domains.find(d => d.id === violation.domain_id)
                   const camera = cameras.find(c => c.id === violation.camera_id)
                   
@@ -459,6 +577,16 @@ export default function Events() {
                       </td>
                       <td className="px-4 py-3 text-sm text-gray-600">{domain?.name || 'Unknown'}</td>
                       <td className="px-4 py-3 text-sm text-gray-600">{camera?.name || 'Unknown'}</td>
+                      <td className="px-4 py-3 text-sm text-gray-600">
+                        {camera?.location ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-50 text-blue-700 rounded text-xs">
+                            <MapPin className="w-3 h-3" />
+                            {camera.location}
+                          </span>
+                        ) : (
+                          <span className="text-gray-400">-</span>
+                        )}
+                      </td>
                       <td className="px-4 py-3">
                         <div className="flex flex-wrap gap-1">
                           {violation.missing_ppe.slice(0, 2).map((ppe, idx) => (
@@ -493,7 +621,7 @@ export default function Events() {
                       <td className="px-4 py-3">
                         <button
                           onClick={() => setSelectedViolation(violation)}
-                          className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
+                          className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-[#405189] bg-[#405189]/10 rounded-lg hover:bg-[#405189]/20 transition-colors"
                         >
                           <Eye className="w-3.5 h-3.5" />
                           View

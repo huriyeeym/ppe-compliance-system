@@ -130,17 +130,17 @@ export default function Sidebar() {
               className="w-full flex items-center gap-2 px-3 py-2 rounded-md text-sm hover:bg-white/5 hover:text-white transition-all"
             >
               <LogOut className="w-4 h-4" style={{ color: 'rgba(255, 255, 255, 0.8)' }} />
-              <span style={{ color: 'rgba(255, 255, 255, 0.8)' }}>Çıkış Yap</span>
+              <span style={{ color: 'rgba(255, 255, 255, 0.8)' }}>Logout</span>
             </button>
           </div>
         ) : (
-          <Link 
-            to="/login" 
+          <Link
+            to="/login"
             style={{ color: '#ffffff' }}
             className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-md bg-white/10 text-sm font-medium hover:bg-white/15 transition-all"
           >
             <User className="w-4 h-4" style={{ color: '#ffffff' }} />
-            <span style={{ color: '#ffffff' }}>Giriş Yap</span>
+            <span style={{ color: '#ffffff' }}>Login</span>
           </Link>
         )}
       </div>

@@ -1,13 +1,37 @@
 import { useState, useEffect } from 'react'
+import { Camera as CameraIcon } from 'lucide-react'
 import { cameraService, type Camera } from '../../lib/api/services/cameraService'
 import { domainService } from '../../lib/api/services/domainService'
 import { logger } from '../../lib/utils/logger'
 
 interface CameraGridProps {
   domainId?: string
+  onDetectionComplete?: (result: {
+    detections: Array<{
+      person_id: number
+      track_id: number | null
+      bbox: { x: number; y: number; w: number; h: number }
+      ppe_status: {
+        hard_hat: { detected: boolean; confidence: number }
+        safety_vest: { detected: boolean; confidence: number }
+      }
+      compliance: boolean
+    }>
+    violations_recorded: Array<{
+      track_id: number
+      reason: string
+      snapshot_path: string
+    }>
+    recording_stats: {
+      total_recordings: number
+      active_sessions: number
+      recording_rate: number
+    }
+    frame_snapshot?: string
+  }) => void
 }
 
-export default function CameraGrid({ domainId }: CameraGridProps) {
+export default function CameraGrid({ domainId, onDetectionComplete }: CameraGridProps) {
   const [cameras, setCameras] = useState<Camera[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -41,7 +65,7 @@ export default function CameraGrid({ domainId }: CameraGridProps) {
   const sourceTypeLabels = {
     webcam: 'Webcam',
     rtsp: 'RTSP',
-    file: 'Dosya',
+    file: 'File',
   }
 
   if (loading) {
@@ -61,31 +85,18 @@ export default function CameraGrid({ domainId }: CameraGridProps) {
 
   return (
     <div className="card">
-      <div className="flex items-center justify-between mb-4">
-        <div>
-          <h3 className="text-section-title">Canlı Kamera İzleme</h3>
-          <p className="text-caption text-slate-500 mt-1">
-            {filteredCameras.length} aktif kamera
-          </p>
-        </div>
-        <div className="flex items-center gap-2 text-caption text-slate-500">
-          <span>1/{filteredCameras.length}</span>
-          <div className="flex gap-1">
-            <button className="w-6 h-6 rounded hover:bg-slate-700 flex items-center justify-center text-slate-400 hover:text-slate-200">
-              ‹
-            </button>
-            <button className="w-6 h-6 rounded hover:bg-slate-700 flex items-center justify-center text-slate-400 hover:text-slate-200">
-              ›
-            </button>
-          </div>
-        </div>
+      <div className="mb-4">
+        <h3 className="text-section-title">Live Camera Monitoring</h3>
+        <p className="text-caption text-slate-500 mt-1">
+          {filteredCameras.length} active cameras
+        </p>
       </div>
 
       {filteredCameras.length === 0 ? (
         <div className="text-center py-12 bg-slate-900/30 rounded-lg border border-slate-700">
-          <div className="text-4xl mb-3 opacity-30">📹</div>
-          <p className="text-body text-slate-500">Bu domain için kamera bulunamadı</p>
-          <p className="text-caption text-slate-600 mt-1">Configure sayfasından kamera ekleyebilirsiniz</p>
+          <CameraIcon className="w-16 h-16 mx-auto mb-3 text-slate-600 opacity-30" />
+          <p className="text-body text-slate-500">No cameras found for this domain</p>
+          <p className="text-caption text-slate-600 mt-1">You can add cameras from the Configure page</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -96,7 +107,7 @@ export default function CameraGrid({ domainId }: CameraGridProps) {
                 {/* Simulated Camera Feed */}
                 <div className="w-full h-full flex items-center justify-center">
                   <div className="text-center">
-                    <div className="text-4xl mb-2 opacity-30">📹</div>
+                    <CameraIcon className="w-16 h-16 mx-auto mb-2 text-slate-600 opacity-30" />
                     <p className="text-slate-500 text-sm">{camera.name}</p>
                     <p className="text-slate-600 text-xs mt-1">{camera.location}</p>
                   </div>
@@ -126,10 +137,10 @@ export default function CameraGrid({ domainId }: CameraGridProps) {
                       </div>
                       <div className="space-y-0.5">
                         <div className="bg-green-500/80 px-1.5 py-0.5 rounded text-[10px]">
-                          ✓ Baret
+                          ✓ Hard Hat
                         </div>
                         <div className="bg-red-500/80 px-1.5 py-0.5 rounded text-[10px]">
-                          ✗ Yelek
+                          ✗ Safety Vest
                         </div>
                       </div>
                     </div>

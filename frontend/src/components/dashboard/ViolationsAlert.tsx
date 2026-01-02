@@ -1,24 +1,28 @@
 import { useState, useEffect } from 'react'
+import type { ReactNode } from 'react'
+import { HardHat, Shield, Glasses, User, Footprints, Hand, AlertTriangle, CheckCircle2 } from 'lucide-react'
 import { violationService, type Violation } from '../../lib/api/services'
 import { domainService } from '../../lib/api/services'
 import { logger } from '../../lib/utils/logger'
+import ViolationDetailModal from '../violations/ViolationDetailModal'
 
 interface ViolationsAlertProps {
   domainId?: string
 }
 
 /**
- * İnşaat Alanı İhlal Uyarıları
- * 
- * Gerçek kullanım:
- * - API'den son 10 ihlali çeker
- * - Real-time güncelleme (her 30 saniyede bir)
- * - Domain ID'ye göre filtreleme
+ * Construction Site Violation Alerts
+ *
+ * Real usage:
+ * - Fetches last 10 violations from API
+ * - Real-time updates (every 30 seconds)
+ * - Filtering by Domain ID
  */
 export default function ViolationsAlert({ domainId }: ViolationsAlertProps) {
   const [alerts, setAlerts] = useState<Violation[]>([])
   const [logs, setLogs] = useState<Violation[]>([])
   const [loading, setLoading] = useState(true)
+  const [selectedViolation, setSelectedViolation] = useState<Violation | null>(null)
 
   useEffect(() => {
     if (!domainId) return
@@ -26,7 +30,7 @@ export default function ViolationsAlert({ domainId }: ViolationsAlertProps) {
     const loadViolations = async () => {
       try {
         setLoading(true)
-        // Domain ID'yi bul (type'dan ID'ye çevir)
+        // Find Domain ID (convert from type to ID)
         const domains = await domainService.getActive()
         const domain = domains.find(d => d.type === domainId)
         if (!domain) {
@@ -36,7 +40,7 @@ export default function ViolationsAlert({ domainId }: ViolationsAlertProps) {
 
         logger.debug('Loading violations', { domainId: domain.id })
 
-        // Son 10 ihlali çek (onaylanmamış, kritik)
+        // Fetch last 10 violations (unacknowledged, critical)
         const response = await violationService.getAll({
           domain_id: domain.id,
           acknowledged: false,
@@ -47,7 +51,7 @@ export default function ViolationsAlert({ domainId }: ViolationsAlertProps) {
         setAlerts(response.items)
         logger.debug('Alerts loaded', { count: response.items.length })
 
-        // İhlal geçmişi (tüm ihlaller, son 20)
+        // Violation history (all violations, last 20)
         const logsResponse = await violationService.getAll({
           domain_id: domain.id,
           limit: 20,
@@ -55,7 +59,7 @@ export default function ViolationsAlert({ domainId }: ViolationsAlertProps) {
         setLogs(logsResponse.items)
         logger.debug('Violation logs loaded', { count: logsResponse.items.length })
       } catch (err) {
-        logger.error('İhlal yükleme hatası', err)
+        logger.error('Violation loading error', err)
       } finally {
         setLoading(false)
       }
@@ -63,21 +67,21 @@ export default function ViolationsAlert({ domainId }: ViolationsAlertProps) {
 
     loadViolations()
 
-    // Her 30 saniyede bir yenile
+    // Refresh every 30 seconds
     const interval = setInterval(loadViolations, 30000)
     return () => clearInterval(interval)
   }, [domainId])
 
-  const getPPEIcon = (type: string) => {
-    const icons: Record<string, string> = {
-      hard_hat: '🔨',
-      safety_vest: '🦺',
-      safety_glasses: '🥽',
-      face_mask: '😷',
-      safety_boots: '👢',
-      gloves: '🧤',
+  const getPPEIcon = (type: string): ReactNode => {
+    const icons: Record<string, ReactNode> = {
+      hard_hat: <HardHat className="w-4 h-4" />,
+      safety_vest: <Shield className="w-4 h-4" />,
+      safety_glasses: <Glasses className="w-4 h-4" />,
+      face_mask: <User className="w-4 h-4" />,
+      safety_boots: <Footprints className="w-4 h-4" />,
+      gloves: <Hand className="w-4 h-4" />,
     }
-    return icons[type] || '⚠️'
+    return icons[type] || <AlertTriangle className="w-4 h-4" />
   }
 
   const getPPEDisplayName = (type: string) => {
@@ -119,7 +123,7 @@ export default function ViolationsAlert({ domainId }: ViolationsAlertProps) {
         <div className="space-y-2">
           {alerts.length === 0 ? (
             <div className="text-center py-8 text-slate-500">
-              <div className="text-3xl mb-2 opacity-30">✅</div>
+              <CheckCircle2 className="w-12 h-12 mx-auto mb-2 text-green-500 opacity-30" />
               <p className="text-body">No violations in the last 24 hours</p>
             </div>
           ) : (
@@ -131,7 +135,7 @@ export default function ViolationsAlert({ domainId }: ViolationsAlertProps) {
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-1">
                     {alert.missing_ppe.map((ppe, idx) => (
-                      <span key={idx} className="text-lg">
+                      <span key={idx} className="text-red-400">
                         {getPPEIcon(ppe.type)}
                       </span>
                     ))}
@@ -146,7 +150,10 @@ export default function ViolationsAlert({ domainId }: ViolationsAlertProps) {
                     Camera #{alert.camera_id} • {formatTime(alert.timestamp)}
                   </p>
                 </div>
-                <button className="btn-ghost text-xs px-3 py-1 ml-2">
+                <button
+                  onClick={() => setSelectedViolation(alert)}
+                  className="btn-ghost text-xs px-3 py-1 ml-2"
+                >
                   Details
                 </button>
               </div>
@@ -170,7 +177,7 @@ export default function ViolationsAlert({ domainId }: ViolationsAlertProps) {
                 className="flex items-center justify-between p-2 hover:bg-slate-900/50 rounded transition-colors"
               >
                 <div className="flex items-center gap-2">
-                  <div className="text-lg">
+                  <div className="text-slate-400">
                     {log.missing_ppe[0] && getPPEIcon(log.missing_ppe[0].type)}
                   </div>
                   <div>
@@ -186,6 +193,14 @@ export default function ViolationsAlert({ domainId }: ViolationsAlertProps) {
           )}
         </div>
       </div>
+
+      {/* Violation Detail Modal */}
+      {selectedViolation && (
+        <ViolationDetailModal
+          violation={selectedViolation}
+          onClose={() => setSelectedViolation(null)}
+        />
+      )}
     </div>
   )
 }

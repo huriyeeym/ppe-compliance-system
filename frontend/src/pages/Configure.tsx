@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
+import toast from 'react-hot-toast'
 import { Building2, Video, Users, Bot, Settings, RefreshCw, Plus, Edit, Trash2, CheckCircle2, AlertCircle, Camera as CameraIcon } from 'lucide-react'
 import {
   domainService,
@@ -17,6 +18,7 @@ import {
   type PPEType,
 } from '../lib/api/services/ppeTypeService'
 import { logger } from '../lib/utils/logger'
+import CustomSelect from '../components/common/CustomSelect'
 
 type DomainRulesMap = Record<number, DomainRule[]>
 
@@ -108,7 +110,7 @@ export default function Configure() {
       setError(
         fetchError instanceof Error
           ? fetchError.message
-          : 'Veriler yüklenirken hata oluştu'
+          : 'Error loading data'
       )
     } finally {
       setLoading(false)
@@ -120,7 +122,7 @@ export default function Configure() {
     setDomainFormError(null)
 
     if (!domainForm.name.trim() || !domainForm.type.trim()) {
-      setDomainFormError('Domain adı ve tipi zorunludur')
+      setDomainFormError('Domain name and type are required')
       return
     }
 
@@ -139,12 +141,13 @@ export default function Configure() {
       setDomainRules((prev) => ({ ...prev, [created.id]: rules }))
       setDomainForm(initialDomainForm)
       setDomainFormVisible(false)
+      toast.success(`Domain "${created.name}" created successfully`)
     } catch (submitError) {
       logger.error('Domain create failed', submitError)
       setDomainFormError(
         submitError instanceof Error
           ? submitError.message
-          : 'Domain oluşturulamadı'
+          : 'Failed to create domain'
       )
     } finally {
       setSavingDomain(false)
@@ -156,13 +159,13 @@ export default function Configure() {
     setCameraFormError(null)
 
     if (!cameraForm.name.trim() || !cameraForm.domain_id || !cameraForm.source_uri.trim()) {
-      setCameraFormError('Kamera adı, domain ve kaynak URI zorunludur')
+      setCameraFormError('Camera name, domain, and source URI are required')
       return
     }
 
     const domainId = Number(cameraForm.domain_id)
     if (Number.isNaN(domainId)) {
-      setCameraFormError('Geçerli bir domain seçmelisiniz')
+      setCameraFormError('Please select a valid domain')
       return
     }
 
@@ -181,22 +184,48 @@ export default function Configure() {
       setCameras((prev) => [...prev, created])
       setCameraForm(initialCameraForm)
       setCameraFormVisible(false)
+      toast.success(`Camera "${created.name}" created successfully`)
     } catch (submitError) {
       logger.error('Camera create failed', submitError)
       setCameraFormError(
         submitError instanceof Error
           ? submitError.message
-          : 'Kamera eklenemedi'
+          : 'Failed to add camera'
       )
     } finally {
       setSavingCamera(false)
     }
   }
 
+  const handleEditCamera = async (cameraId: number) => {
+    try {
+      // TODO: Implement camera edit modal/form
+      logger.info('Edit camera', { cameraId })
+      toast.success('Camera edit feature coming soon')
+    } catch (err) {
+      logger.error('Error editing camera', err)
+      toast.error('Failed to edit camera')
+    }
+  }
+
+  const handleDeleteCamera = async (cameraId: number, cameraName: string) => {
+    try {
+      const confirmed = window.confirm(`Are you sure you want to delete camera "${cameraName}"?`)
+      if (!confirmed) return
+
+      await cameraService.delete(cameraId)
+      setCameras((prev) => prev.filter((c) => c.id !== cameraId))
+      toast.success(`Camera "${cameraName}" deleted successfully`)
+    } catch (err) {
+      logger.error('Error deleting camera', err)
+      toast.error('Failed to delete camera')
+    }
+  }
+
   const tabs = [
-    { id: 'domains', label: 'Domainler & Kurallar', icon: Building2 },
-    { id: 'cameras', label: 'Kameralar', icon: Video },
-    { id: 'users', label: 'Kullanıcılar', icon: Users },
+    { id: 'domains', label: 'Domains & Rules', icon: Building2 },
+    { id: 'cameras', label: 'Cameras', icon: Video },
+    { id: 'users', label: 'Users', icon: Users },
     { id: 'model', label: 'ML Model', icon: Bot },
   ]
 
@@ -213,7 +242,7 @@ export default function Configure() {
     const labels: Record<string, string> = {
       webcam: 'Webcam',
       rtsp: 'RTSP Stream',
-      file: 'Video Dosyası',
+      file: 'Video File',
     }
     return labels[type] || type
   }
@@ -232,7 +261,7 @@ export default function Configure() {
   const totalRules = Object.values(domainRules).reduce((sum, rules) => sum + rules.length, 0)
 
   return (
-    <div className="space-y-6">
+    <div className="p-6 space-y-6">
       {/* Header */}
       <div>
         <h1 className="text-page-title mb-1">Configure</h1>
@@ -464,16 +493,6 @@ export default function Configure() {
                       </div>
                     </div>
                   </div>
-                  <div className="flex gap-2 ml-4">
-                    <button className="btn-secondary flex items-center gap-2">
-                      <Edit className="w-4 h-4" />
-                      <span>Edit</span>
-                    </button>
-                    <button className="btn-danger flex items-center gap-2">
-                      <Trash2 className="w-4 h-4" />
-                      <span>Delete</span>
-                    </button>
-                  </div>
                 </div>
 
                 {/* PPE Rules Section */}
@@ -482,10 +501,6 @@ export default function Configure() {
                     <h4 className="text-sm font-semibold text-[#495057]">
                       PPE Rules ({domainRules[selectedDomain.id]?.length || 0})
                     </h4>
-                    <button className="btn-ghost flex items-center gap-1 text-xs">
-                      <Plus className="w-3 h-3" />
-                      <span>Add Rule</span>
-                    </button>
                   </div>
 
                   {domainRules[selectedDomain.id] && domainRules[selectedDomain.id].length > 0 ? (
@@ -622,14 +637,14 @@ export default function Configure() {
                 </div>
                 <div>
                   <label className="text-label block mb-1">Status</label>
-                  <select
-                    className="w-full px-3 py-2 bg-white border border-[#E9ECEF] rounded-md text-sm text-[#495057] focus:outline-none focus:ring-2 focus:ring-[#405189]/20 focus:border-[#405189]"
+                  <CustomSelect
                     value={domainForm.status}
-                    onChange={(e) => setDomainForm((prev) => ({ ...prev, status: e.target.value as 'active' | 'planned' }))}
-                  >
-                    <option value="active">Active</option>
-                    <option value="planned">Planned</option>
-                  </select>
+                    onChange={(val) => setDomainForm((prev) => ({ ...prev, status: val as 'active' | 'planned' }))}
+                    options={[
+                      { value: 'active', label: 'Active' },
+                      { value: 'planned', label: 'Planned' }
+                    ]}
+                  />
                 </div>
               </div>
               <div>
@@ -694,28 +709,30 @@ export default function Configure() {
                     </div>
                     <div>
                       <label className="text-label block mb-1">Domain</label>
-                      <select
-                        className="w-full px-3 py-2 bg-white border border-[#E9ECEF] rounded-md text-sm text-[#495057] focus:outline-none focus:ring-2 focus:ring-[#405189]/20 focus:border-[#405189]"
-                        value={cameraForm.domain_id}
-                        onChange={(e) => setCameraForm((prev) => ({ ...prev, domain_id: e.target.value }))}
-                      >
-                        <option value="">Select domain</option>
-                        {domains.map((domain) => (
-                          <option key={domain.id} value={domain.id}>{domain.name}</option>
-                        ))}
-                      </select>
+                      <CustomSelect
+                        value={cameraForm.domain_id || ''}
+                        onChange={(val) => setCameraForm((prev) => ({ ...prev, domain_id: val ? String(val) : '' }))}
+                        options={[
+                          { value: '', label: 'Select domain' },
+                          ...domains.map(domain => ({
+                            value: domain.id,
+                            label: domain.name
+                          }))
+                        ]}
+                        placeholder="Select domain"
+                      />
                     </div>
                     <div>
                       <label className="text-label block mb-1">Source Type</label>
-                      <select
-                        className="w-full px-3 py-2 bg-white border border-[#E9ECEF] rounded-md text-sm text-[#495057] focus:outline-none focus:ring-2 focus:ring-[#405189]/20 focus:border-[#405189]"
+                      <CustomSelect
                         value={cameraForm.source_type}
-                        onChange={(e) => setCameraForm((prev) => ({ ...prev, source_type: e.target.value as Camera['source_type'] }))}
-                      >
-                        <option value="webcam">Webcam</option>
-                        <option value="rtsp">RTSP Stream</option>
-                        <option value="file">Video File</option>
-                      </select>
+                        onChange={(val) => setCameraForm((prev) => ({ ...prev, source_type: val as Camera['source_type'] }))}
+                        options={[
+                          { value: 'webcam', label: 'Webcam' },
+                          { value: 'rtsp', label: 'RTSP Stream' },
+                          { value: 'file', label: 'Video File' }
+                        ]}
+                      />
                     </div>
                     <div>
                       <label className="text-label block mb-1">Source URI / Device</label>
@@ -810,11 +827,19 @@ export default function Configure() {
                           )}
                         </div>
                         <div className="flex gap-2">
-                          <button className="btn-ghost flex items-center gap-1 text-xs">
+                          <button
+                            onClick={() => handleEditCamera(camera.id)}
+                            className="btn-ghost flex items-center gap-1 text-xs"
+                            title="Edit camera"
+                          >
                             <Edit className="w-3 h-3" />
                             <span>Edit</span>
                           </button>
-                          <button className="btn-danger flex items-center gap-1 text-xs">
+                          <button
+                            onClick={() => handleDeleteCamera(camera.id, camera.name)}
+                            className="btn-danger flex items-center gap-1 text-xs"
+                            title="Delete camera"
+                          >
                             <Trash2 className="w-3 h-3" />
                             <span>Delete</span>
                           </button>
@@ -834,7 +859,16 @@ export default function Configure() {
             <div className="text-center py-12">
               <Users className="w-12 h-12 text-[#878A99] mx-auto mb-4" />
               <h3 className="text-section-title mb-2">User Management</h3>
-              <p className="text-body text-[#878A99]">User management interface coming soon...</p>
+              <p className="text-body text-[#878A99] mb-4">
+                User management is available in the Admin Panel.
+              </p>
+              <a
+                href="/admin"
+                className="btn-primary inline-flex items-center gap-2"
+              >
+                <Users className="w-4 h-4" />
+                <span>Go to Admin Panel</span>
+              </a>
             </div>
           </div>
         )}
@@ -866,12 +900,6 @@ export default function Configure() {
                       ? 'YOLOv8 (Custom trained)'
                       : 'Model training pending'}
                   </p>
-                  {domain.status === 'active' && (
-                    <div className="flex gap-2">
-                      <button className="btn-ghost text-xs">Model Details</button>
-                      <button className="btn-ghost text-xs">Retrain</button>
-                    </div>
-                  )}
                 </div>
               ))}
             </div>
