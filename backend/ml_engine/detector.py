@@ -11,6 +11,7 @@ from ultralytics import YOLO
 from backend.config import settings
 from backend.utils.logger import logger
 from backend.ml_engine.tracker import PersonTracker
+from backend.ml_engine.bbox_smoother import BoundingBoxSmoother
 
 
 class PPEDetector:
@@ -54,6 +55,9 @@ class PPEDetector:
 
         # Initialize tracker if enabled
         self.tracker = PersonTracker() if enable_tracking else None
+        
+        # Initialize bounding box smoother (always enabled for stability)
+        self.bbox_smoother = BoundingBoxSmoother(alpha=0.7)  # 0.7 = good balance
 
         logger.info("PPE Detector initialized")
         logger.info(f"Model: {self.model_path}")
@@ -122,42 +126,74 @@ class PPEDetector:
         # Add tracking IDs if tracking is enabled
         if self.tracker is not None:
             detections = self.tracker.update(detections)
+        
+        # Smooth bounding boxes to reduce jitter (stabilize positions)
+        for det in detections:
+            if "bbox" in det and "track_id" in det:
+                det["bbox"] = self.bbox_smoother.smooth(det["track_id"], det["bbox"])
 
         return detections
     
     def _parse_results(self, result) -> List[Dict]:
         """
         Parse YOLO results into structured format
-        
+
         Args:
             result: YOLO result object
-        
+
         Returns:
             List of detections with bbox and class info
         """
         detections = []
-        
-        # Extract boxes, classes, and confidences
-        boxes = result.boxes.xyxy.cpu().numpy()  # [x1, y1, x2, y2]
-        classes = result.boxes.cls.cpu().numpy()  # class indices
-        confidences = result.boxes.conf.cpu().numpy()  # confidence scores
-        
-        for box, cls, conf in zip(boxes, classes, confidences):
-            x1, y1, x2, y2 = box
-            
-            detection = {
-                "class": result.names[int(cls)],  # class name
-                "class_id": int(cls),
-                "confidence": float(conf),
-                "bbox": {
-                    "x": int(x1),
-                    "y": int(y1),
-                    "w": int(x2 - x1),
-                    "h": int(y2 - y1)
+
+        # Check if any detections were found
+        if result.boxes is None or len(result.boxes) == 0:
+            return detections  # Return empty list if no detections
+
+        try:
+            # Extract boxes, classes, and confidences with safety checks
+            boxes = result.boxes.xyxy
+            classes = result.boxes.cls
+            confidences = result.boxes.conf
+
+            # Safety check: ensure all required tensors exist
+            if boxes is None or classes is None or confidences is None:
+                logger.warning("Missing required detection tensors (boxes/cls/conf is None)")
+                return detections
+
+            # Convert to numpy
+            boxes = boxes.cpu().numpy()  # [x1, y1, x2, y2]
+            classes = classes.cpu().numpy()  # class indices
+            confidences = confidences.cpu().numpy()  # confidence scores
+
+            # Get class names (handle case where names might be missing)
+            class_names = getattr(result, 'names', None) or {}
+
+            for box, cls, conf in zip(boxes, classes, confidences):
+                x1, y1, x2, y2 = box
+                cls_int = int(cls)
+
+                # Get class name or use class ID as fallback
+                class_name = class_names.get(cls_int, f"class_{cls_int}") if class_names else f"class_{cls_int}"
+
+                detection = {
+                    "class": class_name,
+                    "class_id": cls_int,
+                    "confidence": float(conf),
+                    "bbox": {
+                        "x": int(x1),
+                        "y": int(y1),
+                        "w": int(x2 - x1),
+                        "h": int(y2 - y1)
+                    }
                 }
-            }
-            detections.append(detection)
-        
+                detections.append(detection)
+
+        except Exception as e:
+            logger.error(f"Error parsing YOLO results: {e}")
+            logger.error(f"Result type: {type(result)}, boxes type: {type(result.boxes) if hasattr(result, 'boxes') else 'N/A'}")
+            return detections
+
         return detections
     
     def _group_ppe_with_persons(self, detections: List[Dict]) -> List[Dict]:
