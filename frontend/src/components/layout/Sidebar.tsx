@@ -10,7 +10,8 @@ import {
   Crown,
   LogOut,
   User,
-  AlertCircle
+  AlertCircle,
+  Globe
 } from 'lucide-react'
 
 // Helper function to get role display name
@@ -42,6 +43,7 @@ export default function Sidebar() {
 
   const menuItems = [
     { path: '/', label: 'Dashboard', icon: LayoutDashboard, requiresAuth: true },
+    { path: '/system-overview', label: 'System Overview', icon: Globe, requiresAuth: true },
     { path: '/events', label: 'Events & Alerts', icon: AlertCircle, requiresAuth: true },
     { path: '/live-camera', label: 'Live Camera', icon: Video, requiresAuth: true },
     { path: '/report', label: 'Report', icon: FileText, requiresAuth: true },

@@ -1,11 +1,7 @@
 import { useMemo } from 'react'
 import {
-  LineChart,
-  Line,
   AreaChart,
   Area,
-  BarChart,
-  Bar,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -46,66 +42,79 @@ export default function ViolationTrendChart({
     }
   }, [data])
 
-  // Format data for chart
+  // Format data for chart - ensure we have proper date formatting
   const chartData = useMemo(() => {
-    return data.map(d => ({
-      date: new Date(d.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-      'Total': d.total,
-      'Hard Hat': d.hard_hat,
-      'Safety Vest': d.safety_vest,
-    }))
+    if (!data || data.length === 0) return []
+    
+    return data.map(d => {
+      const date = new Date(d.timestamp)
+      return {
+        date: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        fullDate: d.timestamp,
+        'Total': d.total || 0,
+        'Hard Hat': d.hard_hat || 0,
+        'Safety Vest': d.safety_vest || 0,
+      }
+    })
   }, [data])
 
-  const renderChart = () => {
-    const commonProps = {
-      data: chartData,
-      margin: { top: 5, right: 30, left: 20, bottom: 5 },
+  // Custom tooltip
+  const CustomTooltip = ({ active, payload, label }: any) => {
+    if (active && payload && payload.length) {
+      return (
+        <div className="bg-white border border-gray-200 rounded-lg shadow-lg p-3">
+          <p className="text-sm font-semibold text-gray-900 mb-2">{label}</p>
+          {payload.map((entry: any, index: number) => (
+            <p key={index} className="text-sm" style={{ color: entry.color }}>
+              {entry.name}: <span className="font-semibold">{entry.value}</span>
+            </p>
+          ))}
+        </div>
+      )
     }
+    return null
+  }
 
-    switch (type) {
-      case 'line':
-        return (
-          <LineChart {...commonProps}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-            <XAxis dataKey="date" stroke="#94a3b8" style={{ fontSize: '0.75rem' }} />
-            <YAxis stroke="#94a3b8" style={{ fontSize: '0.75rem' }} />
-            <Tooltip
-              contentStyle={{
-                backgroundColor: '#1e293b',
-                border: '1px solid #334155',
-                borderRadius: '0.5rem',
-                color: '#f1f5f9',
-              }}
-            />
-            <Legend wrapperStyle={{ fontSize: '0.75rem', color: '#94a3b8' }} />
-            <Line
-              type="monotone"
-              dataKey="Total"
-              stroke="#8b5cf6"
-              strokeWidth={2}
-              dot={{ fill: '#8b5cf6', r: 4 }}
-              activeDot={{ r: 6 }}
-            />
-            <Line
-              type="monotone"
-              dataKey="Hard Hat"
-              stroke="#ef4444"
-              strokeWidth={2}
-              dot={{ fill: '#ef4444', r: 3 }}
-            />
-            <Line
-              type="monotone"
-              dataKey="Safety Vest"
-              stroke="#f59e0b"
-              strokeWidth={2}
-              dot={{ fill: '#f59e0b', r: 3 }}
-            />
-          </LineChart>
-        )
+  return (
+    <div className="card">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-section-title text-gray-900">{title}</h3>
+        {trend && (
+          <div
+            className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-medium ${
+              trend.direction === 'up'
+                ? 'bg-red-50 text-red-600 border border-red-200'
+                : trend.direction === 'down'
+                ? 'bg-green-50 text-green-600 border border-green-200'
+                : 'bg-gray-50 text-gray-600 border border-gray-200'
+            }`}
+          >
+            {trend.direction === 'up' ? (
+              <TrendingUp className="h-4 w-4" />
+            ) : trend.direction === 'down' ? (
+              <TrendingDown className="h-4 w-4" />
+            ) : (
+              <Minus className="h-4 w-4" />
+            )}
+            <span>{trend.value}%</span>
+          </div>
+        )}
+      </div>
 
-      case 'area':
-        return (
-          <AreaChart {...commonProps}>
+      {chartData.length === 0 ? (
+        <div className="h-80 flex flex-col items-center justify-center text-gray-500">
+          <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
+            <Minus className="w-8 h-8 text-gray-400" />
+          </div>
+          <p className="text-body font-medium text-gray-600">No violation data available</p>
+          <p className="text-caption text-gray-500 mt-1">Data will appear here once violations are detected</p>
+        </div>
+      ) : (
+        <ResponsiveContainer width="100%" height={350}>
+          <AreaChart
+            data={chartData}
+            margin={{ top: 10, right: 30, left: 0, bottom: 0 }}
+          >
             <defs>
               <linearGradient id="colorTotal" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.3} />
@@ -120,97 +129,48 @@ export default function ViolationTrendChart({
                 <stop offset="95%" stopColor="#f59e0b" stopOpacity={0} />
               </linearGradient>
             </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-            <XAxis dataKey="date" stroke="#94a3b8" style={{ fontSize: '0.75rem' }} />
-            <YAxis stroke="#94a3b8" style={{ fontSize: '0.75rem' }} />
-            <Tooltip
-              contentStyle={{
-                backgroundColor: '#1e293b',
-                border: '1px solid #334155',
-                borderRadius: '0.5rem',
-                color: '#f1f5f9',
-              }}
+            <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+            <XAxis 
+              dataKey="date" 
+              stroke="#6b7280" 
+              style={{ fontSize: '0.75rem' }}
+              tick={{ fill: '#6b7280' }}
             />
-            <Legend wrapperStyle={{ fontSize: '0.75rem', color: '#94a3b8' }} />
+            <YAxis 
+              stroke="#6b7280" 
+              style={{ fontSize: '0.75rem' }}
+              tick={{ fill: '#6b7280' }}
+            />
+            <Tooltip content={<CustomTooltip />} />
+            <Legend 
+              wrapperStyle={{ fontSize: '0.875rem', paddingTop: '20px' }}
+              iconType="circle"
+            />
             <Area
               type="monotone"
               dataKey="Total"
               stroke="#8b5cf6"
               strokeWidth={2}
               fill="url(#colorTotal)"
+              name="Total"
             />
             <Area
               type="monotone"
               dataKey="Hard Hat"
               stroke="#ef4444"
-              strokeWidth={1.5}
+              strokeWidth={2}
               fill="url(#colorHat)"
+              name="Hard Hat"
             />
             <Area
               type="monotone"
               dataKey="Safety Vest"
               stroke="#f59e0b"
-              strokeWidth={1.5}
+              strokeWidth={2}
               fill="url(#colorVest)"
+              name="Safety Vest"
             />
           </AreaChart>
-        )
-
-      case 'bar':
-        return (
-          <BarChart {...commonProps}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-            <XAxis dataKey="date" stroke="#94a3b8" style={{ fontSize: '0.75rem' }} />
-            <YAxis stroke="#94a3b8" style={{ fontSize: '0.75rem' }} />
-            <Tooltip
-              contentStyle={{
-                backgroundColor: '#1e293b',
-                border: '1px solid #334155',
-                borderRadius: '0.5rem',
-                color: '#f1f5f9',
-              }}
-            />
-            <Legend wrapperStyle={{ fontSize: '0.75rem', color: '#94a3b8' }} />
-            <Bar dataKey="Hard Hat" fill="#ef4444" radius={[4, 4, 0, 0]} />
-            <Bar dataKey="Safety Vest" fill="#f59e0b" radius={[4, 4, 0, 0]} />
-          </BarChart>
-        )
-    }
-  }
-
-  return (
-    <div className="card">
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-section-title text-slate-50">{title}</h3>
-        {trend && (
-          <div
-            className={`flex items-center gap-1 px-2 py-1 rounded text-caption font-medium ${
-              trend.direction === 'up'
-                ? 'bg-red-500/10 text-red-400'
-                : trend.direction === 'down'
-                ? 'bg-green-500/10 text-green-400'
-                : 'bg-slate-700 text-slate-400'
-            }`}
-          >
-            {trend.direction === 'up' ? (
-              <TrendingUp className="h-3 w-3" />
-            ) : trend.direction === 'down' ? (
-              <TrendingDown className="h-3 w-3" />
-            ) : (
-              <Minus className="h-3 w-3" />
-            )}
-            <span>{trend.value}%</span>
-          </div>
-        )}
-      </div>
-
-      {data.length === 0 ? (
-        <div className="h-64 flex items-center justify-center text-slate-500">
-          <p className="text-caption">No data yet</p>
-        </div>
-      ) : (
-        <ResponsiveContainer width="100%" height={300}>
-          {renderChart()}
         </ResponsiveContainer>
       )}
     </div>

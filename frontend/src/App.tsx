@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
 import Layout from './components/layout/Layout'
 import Dashboard from './pages/Dashboard'
+import SystemOverview from './pages/SystemOverview'
 import Events from './pages/Events'
 import LiveCamera from './pages/LiveCamera'
 import Report from './pages/Report'
@@ -43,6 +44,7 @@ function App() {
       <Layout>
         <Routes>
           <Route path="/" element={<Dashboard />} />
+          <Route path="/system-overview" element={<SystemOverview />} />
           <Route path="/events" element={<Events />} />
           <Route path="/live-camera" element={<LiveCamera />} />
           <Route path="/report" element={<Report />} />

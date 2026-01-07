@@ -1,10 +1,16 @@
 import type { ReactNode } from 'react'
+import { TrendingUp, TrendingDown } from 'lucide-react'
+
+interface TrendData {
+  value: number
+  direction: 'up' | 'down' | 'stable'
+}
 
 interface KPICardProps {
   title: string
   value: string
   icon: ReactNode
-  trend?: string
+  trend?: TrendData
   color?: 'success' | 'warning' | 'danger' | 'info'
 }
 
@@ -18,6 +24,12 @@ export default function KPICard({ title, value, icon, trend, color = 'info' }: K
 
   const config = colorConfig[color]
 
+  const getTrendColor = (direction: 'up' | 'down' | 'stable') => {
+    if (direction === 'up') return 'text-red-600'
+    if (direction === 'down') return 'text-green-600'
+    return 'text-gray-500'
+  }
+
   return (
     <div className={`
       card border-l-4 ${config.border}
@@ -27,13 +39,18 @@ export default function KPICard({ title, value, icon, trend, color = 'info' }: K
         <div className="flex-1">
           <p className="text-caption mb-2 text-gray-600">{title}</p>
           <h3 className="text-3xl font-bold text-gray-900 mb-1">{value}</h3>
-          {trend && (
-            <p className="text-xs font-medium text-[#4CAF50] flex items-center gap-1">
-              <span>↗</span> {trend}
-            </p>
+          {trend && trend.direction !== 'stable' && (
+            <div className={`text-xs font-medium ${getTrendColor(trend.direction)} flex items-center gap-1`}>
+              {trend.direction === 'up' ? (
+                <TrendingUp className="w-3 h-3" />
+              ) : (
+                <TrendingDown className="w-3 h-3" />
+              )}
+              <span>{trend.value.toFixed(1)}% vs previous period</span>
+            </div>
           )}
         </div>
-        <div className={`w-12 h-12 ${config.iconBg} ${config.iconColor} rounded-lg flex items-center justify-center text-2xl`}>
+        <div className={`w-12 h-12 ${config.iconBg} ${config.iconColor} rounded-lg flex items-center justify-center`}>
           {icon}
         </div>
       </div>
