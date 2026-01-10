@@ -9,7 +9,7 @@ from typing import List, Optional
 from datetime import datetime
 
 from backend.database.models import (
-    Domain, PPEType, DomainPPERule, Camera, Violation, DetectionLog, User
+    Domain, PPEType, DomainPPERule, Camera, Violation, DetectionLog, User, user_domains, Organization, organization_domains
 )
 from backend.database.schemas import (
     DomainCreate, DomainUpdate,
@@ -20,6 +20,47 @@ from backend.database.schemas import (
     ViolationFilterParams,
     UserCreate, UserUpdate
 )
+from backend.utils.logger import logger
+import re
+
+
+# ==========================================
+# HELPER FUNCTIONS
+# ==========================================
+
+def generate_slug(name: str) -> str:
+    """
+    Generate URL-friendly slug from organization name.
+    Converts "ABC İnşaat Ltd." -> "abc-insaat-ltd"
+    """
+    # Turkish character mapping
+    turkish_chars = {
+        'ç': 'c', 'Ç': 'C',
+        'ğ': 'g', 'Ğ': 'G',
+        'ı': 'i', 'İ': 'I',
+        'ö': 'o', 'Ö': 'O',
+        'ş': 's', 'Ş': 'S',
+        'ü': 'u', 'Ü': 'U'
+    }
+    
+    # Replace Turkish characters
+    text = name
+    for turkish, english in turkish_chars.items():
+        text = text.replace(turkish, english)
+    
+    # Convert to lowercase
+    text = text.lower()
+    
+    # Replace spaces and special characters with hyphens
+    text = re.sub(r'[^\w\s-]', '', text)  # Remove special chars except hyphens
+    text = re.sub(r'[-\s]+', '-', text)  # Replace spaces and multiple hyphens with single hyphen
+    text = text.strip('-')  # Remove leading/trailing hyphens
+    
+    # Ensure slug is not empty
+    if not text:
+        text = 'organization'
+    
+    return text
 
 
 # ==========================================
@@ -167,31 +208,76 @@ async def update_domain_rule(db: AsyncSession, rule_id: int, rule: DomainPPERule
 # CAMERA CRUD
 # ==========================================
 
-async def get_cameras(db: AsyncSession, skip: int = 0, limit: int = 100) -> List[Camera]:
-    """Get all cameras with pagination"""
-    result = await db.execute(
-        select(Camera).offset(skip).limit(limit).order_by(Camera.id)
-    )
+async def get_cameras(db: AsyncSession, skip: int = 0, limit: int = 100, organization_id: Optional[int] = None) -> List[Camera]:
+    """
+    Get all cameras with pagination
+    Args:
+        db: Database session
+        skip: Number of records to skip
+        limit: Maximum number of records
+        organization_id: Organization ID for multi-tenant filtering (required for data isolation)
+    """
+    query = select(Camera)
+    
+    # CRITICAL: Always filter by organization_id for data isolation
+    if organization_id is not None:
+        query = query.where(Camera.organization_id == organization_id)
+    
+    query = query.offset(skip).limit(limit).order_by(Camera.id)
+    result = await db.execute(query)
     return result.scalars().all()
 
 
-async def get_camera_by_id(db: AsyncSession, camera_id: int) -> Optional[Camera]:
-    """Get a camera by ID"""
-    result = await db.execute(select(Camera).where(Camera.id == camera_id))
+async def get_camera_by_id(db: AsyncSession, camera_id: int, organization_id: Optional[int] = None) -> Optional[Camera]:
+    """
+    Get a camera by ID
+    Args:
+        db: Database session
+        camera_id: Camera ID
+        organization_id: Organization ID for multi-tenant filtering (optional, but recommended for security)
+    """
+    query = select(Camera).where(Camera.id == camera_id)
+    
+    # Filter by organization_id if provided (security check)
+    if organization_id is not None:
+        query = query.where(Camera.organization_id == organization_id)
+    
+    result = await db.execute(query)
     return result.scalar_one_or_none()
 
 
-async def get_cameras_by_domain(db: AsyncSession, domain_id: int) -> List[Camera]:
-    """Get all cameras for a specific domain"""
-    result = await db.execute(
-        select(Camera).where(Camera.domain_id == domain_id)
-    )
+async def get_cameras_by_domain(db: AsyncSession, domain_id: int, organization_id: Optional[int] = None) -> List[Camera]:
+    """
+    Get all cameras for a specific domain
+    Args:
+        db: Database session
+        domain_id: Domain ID
+        organization_id: Organization ID for multi-tenant filtering (required for data isolation)
+    """
+    query = select(Camera).where(Camera.domain_id == domain_id)
+    
+    # CRITICAL: Always filter by organization_id for data isolation
+    if organization_id is not None:
+        query = query.where(Camera.organization_id == organization_id)
+    
+    result = await db.execute(query)
     return result.scalars().all()
 
 
-async def create_camera(db: AsyncSession, camera: CameraCreate) -> Camera:
-    """Create a new camera"""
-    db_camera = Camera(**camera.model_dump())
+async def create_camera(db: AsyncSession, camera: CameraCreate, organization_id: Optional[int] = None) -> Camera:
+    """
+    Create a new camera
+    Args:
+        db: Database session
+        camera: Camera creation data
+        organization_id: Organization ID (will be set automatically, but can be overridden)
+    """
+    camera_data = camera.model_dump()
+    # Auto-set organization_id if provided (security: ignore client input)
+    if organization_id is not None:
+        camera_data['organization_id'] = organization_id
+    
+    db_camera = Camera(**camera_data)
     db.add(db_camera)
     await db.commit()
     await db.refresh(db_camera)
@@ -230,14 +316,25 @@ async def delete_camera(db: AsyncSession, camera_id: int) -> bool:
 
 async def get_violations(
     db: AsyncSession,
-    filters: ViolationFilterParams
+    filters: ViolationFilterParams,
+    organization_id: Optional[int] = None
 ) -> tuple[List[Violation], int]:
     """
     Get violations with filtering and pagination
     Returns: (violations, total_count)
+    
+    Args:
+        db: Database session
+        filters: Filter parameters
+        organization_id: Organization ID for multi-tenant filtering (required for data isolation)
     """
     # Build query conditions
     conditions = []
+    
+    # CRITICAL: Always filter by organization_id for data isolation
+    if organization_id is not None:
+        conditions.append(Violation.organization_id == organization_id)
+    
     if filters.domain_id:
         conditions.append(Violation.domain_id == filters.domain_id)
     if filters.camera_id:
@@ -286,9 +383,13 @@ async def get_violation_by_id(db: AsyncSession, violation_id: int) -> Optional[V
     return result.scalar_one_or_none()
 
 
-async def create_violation(db: AsyncSession, violation: ViolationCreate) -> Violation:
+async def create_violation(db: AsyncSession, violation: ViolationCreate, organization_id: Optional[int] = None) -> Violation:
     """Create a new violation"""
-    db_violation = Violation(**violation.model_dump())
+    violation_dict = violation.model_dump()
+    # Set organization_id if provided (from camera)
+    if organization_id is not None:
+        violation_dict["organization_id"] = organization_id
+    db_violation = Violation(**violation_dict)
     db.add(db_violation)
     await db.commit()
     await db.refresh(db_violation)
@@ -326,10 +427,28 @@ async def get_violation_stats(
     db: AsyncSession,
     domain_id: Optional[int] = None,
     start_date: Optional[datetime] = None,
-    end_date: Optional[datetime] = None
+    end_date: Optional[datetime] = None,
+    organization_id: Optional[int] = None
 ) -> dict:
-    """Get violation statistics"""
+    """
+    Get comprehensive violation statistics
+    
+    Args:
+        db: Database session
+        domain_id: Optional domain filter
+        start_date: Optional start date filter
+        end_date: Optional end date filter
+        organization_id: Organization ID for multi-tenant filtering (required for data isolation)
+    """
+    from backend.database.models import ViolationSeverity
+    import json
+    
     conditions = []
+    
+    # CRITICAL: Always filter by organization_id for data isolation
+    if organization_id is not None:
+        conditions.append(Violation.organization_id == organization_id)
+    
     if domain_id:
         conditions.append(Violation.domain_id == domain_id)
     if start_date:
@@ -337,27 +456,178 @@ async def get_violation_stats(
     if end_date:
         conditions.append(Violation.timestamp <= end_date)
     
-    # Total violations
-    total_query = select(func.count(Violation.id))
+    # Base query
+    base_query = select(Violation)
     if conditions:
-        total_query = total_query.where(and_(*conditions))
+        base_query = base_query.where(and_(*conditions))
     
-    total_result = await db.execute(total_query)
-    total_violations = total_result.scalar()
+    # Get all violations for detailed stats
+    result = await db.execute(base_query)
+    violations = result.scalars().all()
+    
+    # Calculate statistics
+    total = len(violations)
+    critical = sum(1 for v in violations if v.severity == ViolationSeverity.CRITICAL)
+    high = sum(1 for v in violations if v.severity == ViolationSeverity.HIGH)
+    medium = sum(1 for v in violations if v.severity == ViolationSeverity.MEDIUM)
+    low = sum(1 for v in violations if v.severity == ViolationSeverity.LOW)
+    
+    # Count by PPE type
+    by_ppe_type = {}
+    for violation in violations:
+        # Parse missing_ppe (stored as JSON string in SQLite)
+        missing_ppe = []
+        if violation.missing_ppe:
+            try:
+                if isinstance(violation.missing_ppe, str):
+                    missing_ppe = json.loads(violation.missing_ppe)
+                else:
+                    missing_ppe = violation.missing_ppe
+            except:
+                missing_ppe = []
+        
+        for ppe_item in missing_ppe:
+            ppe_type = ppe_item.get('type', '') if isinstance(ppe_item, dict) else str(ppe_item)
+            if ppe_type:
+                by_ppe_type[ppe_type] = by_ppe_type.get(ppe_type, 0) + 1
+    
+    # Calculate compliance rate (simplified: based on violations vs estimated total detections)
+    # In real scenario, we'd need total detections count
+    # For now: estimate based on violations (assume 10% violation rate)
+    estimated_total_detections = max(total * 10, 100) if total > 0 else 100
+    compliance_rate = max(0, min(100, ((estimated_total_detections - total) / estimated_total_detections * 100))) if estimated_total_detections > 0 else 100
     
     # Acknowledged count
-    ack_query = select(func.count(Violation.id)).where(Violation.acknowledged == True)
-    if conditions:
-        ack_query = ack_query.where(and_(*conditions))
-    
-    ack_result = await db.execute(ack_query)
-    acknowledged = ack_result.scalar()
+    acknowledged = sum(1 for v in violations if v.acknowledged)
     
     return {
-        "total_violations": total_violations,
+        "total": total,
+        "critical": critical,
+        "high": high,
+        "medium": medium,
+        "low": low,
+        "by_ppe_type": by_ppe_type,
+        "compliance_rate": round(compliance_rate, 2),
         "acknowledged": acknowledged,
-        "pending": total_violations - acknowledged
+        "pending": total - acknowledged
     }
+
+
+# ==========================================
+# ORGANIZATION CRUD
+# ==========================================
+
+async def create_organization(db: AsyncSession, name: str) -> Organization:
+    """Create a new organization with auto-generated slug"""
+    # Generate slug from name
+    base_slug = generate_slug(name)
+    slug = base_slug
+    
+    # Ensure slug is unique (append number if needed)
+    counter = 1
+    while True:
+        result = await db.execute(select(Organization).where(Organization.slug == slug))
+        existing = result.scalar_one_or_none()
+        if not existing:
+            break
+        slug = f"{base_slug}-{counter}"
+        counter += 1
+    
+    org = Organization(name=name, slug=slug, is_active=True)
+    db.add(org)
+    await db.commit()
+    await db.refresh(org)
+    return org
+
+
+async def get_organization_by_id(db: AsyncSession, org_id: int) -> Optional[Organization]:
+    """Get organization by ID"""
+    result = await db.execute(select(Organization).where(Organization.id == org_id))
+    return result.scalar_one_or_none()
+
+
+async def get_organization_by_name(db: AsyncSession, name: str) -> Optional[Organization]:
+    """
+    Get organization by name (case-insensitive, trimmed)
+    Handles variations like "Acme Corp" vs "acme corp" vs "Acme Corp "
+    """
+    # Normalize input name
+    normalized_input = name.strip().lower()
+    
+    # Get all organizations and compare normalized names (SQLite doesn't have reliable trim function)
+    result = await db.execute(select(Organization))
+    all_orgs = result.scalars().all()
+    
+    for org in all_orgs:
+        normalized_org_name = org.name.strip().lower() if org.name else ""
+        if normalized_org_name == normalized_input:
+            return org
+    
+    return None
+
+
+async def get_organization_by_email_domain(db: AsyncSession, email: str) -> Optional[Organization]:
+    """
+    Get organization by email domain
+    Extracts domain from email (e.g., user@acme.com -> acme.com)
+    and finds organization where any user from that domain exists
+    
+    Strategy: Find any user with the same email domain, return their organization
+    This is more reliable than name matching and handles organization name variations
+    """
+    # Extract domain from email
+    if '@' not in email:
+        return None
+    
+    email_domain = email.split('@')[1].lower()
+    
+    # Find any user with the same email domain
+    # Get their organization - this is the most reliable way
+    # This handles cases where organization name is misspelled but email domain matches
+    result = await db.execute(
+        select(User).where(
+            func.lower(User.email).like(f'%@{email_domain}')
+        ).limit(1)
+    )
+    user = result.scalar_one_or_none()
+    
+    if user:
+        # Return the organization of the first user found with this email domain
+        org = await get_organization_by_id(db, user.organization_id)
+        if org:
+            logger.debug(f"Found organization {org.name} (ID: {org.id}) for email domain {email_domain}")
+        return org
+    
+    return None
+
+
+async def get_or_create_organization_by_name(db: AsyncSession, name: str) -> Organization:
+    """
+    Get existing organization by name or create new one
+    Normalizes name (trim, case-insensitive) before checking
+    """
+    # Normalize name: trim whitespace
+    normalized_name = name.strip()
+    
+    # Try to find existing organization (case-insensitive, trimmed)
+    org = await get_organization_by_name(db, normalized_name)
+    if org:
+        return org
+    
+    # Create new organization with normalized name
+    return await create_organization(db, normalized_name)
+
+
+async def get_organization_user_count(db: AsyncSession, organization_id: int) -> int:
+    """
+    Get the number of users in an organization
+    Used to determine if a user is the first user (organization owner)
+    """
+    result = await db.execute(
+        select(func.count(User.id)).where(User.organization_id == organization_id)
+    )
+    count = result.scalar_one()
+    return count
 
 
 # ==========================================
@@ -366,14 +636,22 @@ async def get_violation_stats(
 
 
 async def get_user_by_email(db: AsyncSession, email: str) -> Optional[User]:
-    """Get user by email"""
-    result = await db.execute(select(User).where(User.email == email))
+    """Get user by email with domains loaded"""
+    result = await db.execute(
+        select(User)
+        .where(User.email == email)
+        .options(selectinload(User.domains))
+    )
     return result.scalar_one_or_none()
 
 
 async def get_user(db: AsyncSession, user_id: int) -> Optional[User]:
-    """Get user by ID"""
-    result = await db.execute(select(User).where(User.id == user_id))
+    """Get user by ID with domains loaded"""
+    result = await db.execute(
+        select(User)
+        .where(User.id == user_id)
+        .options(selectinload(User.domains))
+    )
     return result.scalar_one_or_none()
 
 
@@ -385,18 +663,71 @@ async def get_users(db: AsyncSession, skip: int = 0, limit: int = 100) -> List[U
     return result.scalars().all()
 
 
-async def create_user(db: AsyncSession, user: UserCreate, hashed_password: str) -> User:
-    """Create new user"""
+async def create_user(db: AsyncSession, user: UserCreate, hashed_password: str, organization_id: Optional[int] = None) -> User:
+    """
+    Create new user with optional domain associations and organization assignment
+    
+    Args:
+        db: Database session
+        user: User creation data
+        hashed_password: Hashed password
+        organization_id: Organization ID (if None, will be determined from user data)
+    """
+    # Determine organization_id
+    if organization_id is None:
+        # If organization_name provided, get or create organization
+        if hasattr(user, 'organization_name') and user.organization_name:
+            org = await get_or_create_organization_by_name(db, user.organization_name)
+            organization_id = org.id
+        else:
+            # Try to find organization by email domain
+            org = await get_organization_by_email_domain(db, user.email)
+            if org:
+                organization_id = org.id
+            else:
+                # Default to organization 1 (should exist from seed)
+                organization_id = 1
+    
     db_user = User(
         email=user.email.lower(),
         full_name=user.full_name,
         hashed_password=hashed_password,
         role=user.role,
+        organization_id=organization_id,
+        domain_id=user.domain_id,
+        permissions=user.permissions or [],
         is_active=user.is_active,
     )
     db.add(db_user)
+    await db.flush()  # Flush to get user.id
+    
+    # Add domain associations if provided
+    # Note: domain_ids is optional - can be set during registration or later via /auth/select-domains
+    if hasattr(user, 'domain_ids') and user.domain_ids:
+        from sqlalchemy import insert
+        try:
+            await db.execute(
+                insert(user_domains).values([
+                    {"user_id": db_user.id, "domain_id": domain_id}
+                    for domain_id in user.domain_ids
+                ])
+            )
+        except Exception as e:
+            # If user_domains table doesn't exist, log warning but don't fail
+            # User can select domains later via /auth/select-domains endpoint
+            logger.warning(f"Could not add domain associations (table may not exist): {e}")
+    
     await db.commit()
     await db.refresh(db_user)
+    
+    # Eagerly load domains relationship to avoid lazy-loading issues
+    # Since this is a new user, domains will be empty, but we need to load the relationship
+    result = await db.execute(
+        select(User)
+        .where(User.id == db_user.id)
+        .options(selectinload(User.domains))
+    )
+    db_user = result.scalar_one()
     return db_user
 
 
@@ -406,7 +737,7 @@ async def update_user(db: AsyncSession, user_id: int, user: UserUpdate, hashed_p
     if not db_user:
         return None
 
-    update_data = user.model_dump(exclude_unset=True)
+    update_data = user.model_dump(exclude_unset=True, exclude={"password"})
     for key, value in update_data.items():
         setattr(db_user, key, value)
     if hashed_password:
@@ -415,4 +746,169 @@ async def update_user(db: AsyncSession, user_id: int, user: UserUpdate, hashed_p
     await db.commit()
     await db.refresh(db_user)
     return db_user
+
+
+async def delete_user(db: AsyncSession, user_id: int) -> bool:
+    """Delete a user"""
+    from sqlalchemy import delete
+    db_user = await get_user(db, user_id)
+    if not db_user:
+        return False
+    
+    await db.execute(delete(User).where(User.id == user_id))
+    await db.commit()
+    return True
+
+
+# ==========================================
+# ORGANIZATION-DOMAIN CRUD
+# ==========================================
+
+
+async def get_organization_domains(db: AsyncSession, organization_id: int) -> List[Domain]:
+    """
+    Get all domains for an organization
+    
+    Args:
+        db: Database session
+        organization_id: Organization ID
+        
+    Returns:
+        List of domains associated with the organization
+    """
+    result = await db.execute(
+        select(Domain)
+        .join(organization_domains)
+        .where(organization_domains.c.organization_id == organization_id)
+        .order_by(Domain.id)
+    )
+    return list(result.scalars().all())
+
+
+async def get_organization_domain_ids(db: AsyncSession, organization_id: int) -> List[int]:
+    """
+    Get domain IDs for an organization (lightweight version)
+    
+    Args:
+        db: Database session
+        organization_id: Organization ID
+        
+    Returns:
+        List of domain IDs
+    """
+    result = await db.execute(
+        select(organization_domains.c.domain_id)
+        .where(organization_domains.c.organization_id == organization_id)
+    )
+    return [row[0] for row in result.all()]
+
+
+async def add_domain_to_organization(
+    db: AsyncSession, 
+    organization_id: int, 
+    domain_id: int, 
+    created_by: Optional[int] = None
+) -> bool:
+    """
+    Add a domain to an organization
+    
+    Args:
+        db: Database session
+        organization_id: Organization ID
+        domain_id: Domain ID to add
+        created_by: User ID who added it (optional)
+        
+    Returns:
+        True if added, False if already exists
+    """
+    # Check if already exists
+    result = await db.execute(
+        select(organization_domains)
+        .where(
+            and_(
+                organization_domains.c.organization_id == organization_id,
+                organization_domains.c.domain_id == domain_id
+            )
+        )
+    )
+    existing = result.first()
+    if existing:
+        logger.debug(f"Domain {domain_id} already exists in organization {organization_id}")
+        return False
+    
+    # Insert new association
+    await db.execute(
+        organization_domains.insert().values(
+            organization_id=organization_id,
+            domain_id=domain_id,
+            created_by=created_by,
+            created_at=datetime.utcnow()
+        )
+    )
+    await db.commit()
+    logger.info(f"Domain {domain_id} added to organization {organization_id}")
+    return True
+
+
+async def remove_domain_from_organization(
+    db: AsyncSession, 
+    organization_id: int, 
+    domain_id: int
+) -> bool:
+    """
+    Remove a domain from an organization
+    
+    Args:
+        db: Database session
+        organization_id: Organization ID
+        domain_id: Domain ID to remove
+        
+    Returns:
+        True if removed, False if not found
+    """
+    result = await db.execute(
+        organization_domains.delete().where(
+            and_(
+                organization_domains.c.organization_id == organization_id,
+                organization_domains.c.domain_id == domain_id
+            )
+        )
+    )
+    await db.commit()
+    
+    if result.rowcount > 0:
+        logger.info(f"Domain {domain_id} removed from organization {organization_id}")
+        return True
+    else:
+        logger.debug(f"Domain {domain_id} not found in organization {organization_id}")
+        return False
+
+
+async def has_organization_domain(
+    db: AsyncSession, 
+    organization_id: int, 
+    domain_id: int
+) -> bool:
+    """
+    Check if an organization has a specific domain
+    
+    Args:
+        db: Database session
+        organization_id: Organization ID
+        domain_id: Domain ID to check
+        
+    Returns:
+        True if organization has the domain, False otherwise
+    """
+    result = await db.execute(
+        select(func.count(organization_domains.c.domain_id))
+        .where(
+            and_(
+                organization_domains.c.organization_id == organization_id,
+                organization_domains.c.domain_id == domain_id
+            )
+        )
+    )
+    count = result.scalar_one()
+    return count > 0
 

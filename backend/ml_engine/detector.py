@@ -78,8 +78,30 @@ class PPEDetector:
         return str(model_file)
     
     def _load_model(self) -> YOLO:
-        """Load YOLO model"""
+        """
+        Load YOLO model (supports local .pt files and Hugging Face model IDs)
+        
+        If model_path contains '/' and doesn't exist as a file, it's treated as a Hugging Face model ID.
+        """
         try:
+            # Check if model_path is a Hugging Face model ID (contains '/' and not a local file)
+            if '/' in str(self.model_path) and not Path(self.model_path).exists():
+                # Try to load from Hugging Face using ultralyticsplus
+                try:
+                    from ultralyticsplus import YOLO as YOLOPlus
+                    logger.info(f"Loading Hugging Face model: {self.model_path}")
+                    model = YOLOPlus(str(self.model_path))
+                    return model
+                except ImportError:
+                    logger.warning("ultralyticsplus not installed. Install with: pip install ultralyticsplus")
+                    logger.info("Falling back to standard YOLO")
+                    # Fall through to standard YOLO
+                except Exception as e:
+                    logger.warning(f"Failed to load from Hugging Face: {e}")
+                    logger.info("Falling back to standard YOLO")
+                    # Fall through to standard YOLO
+            
+            # Load standard YOLO model (local file or pretrained)
             model = YOLO(self.model_path)
             return model
         except Exception as e:

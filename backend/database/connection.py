@@ -29,13 +29,21 @@ AsyncSessionLocal = async_sessionmaker(
 
 async def init_db():
     """
-    Initialize database - create all tables
+    Initialize database - create all tables and seed initial data
     Call this on application startup
     """
     logger.info("Initializing database...")
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     logger.info("Database tables created successfully")
+    
+    # Seed initial data
+    try:
+        from backend.database.seed import seed_all
+        async with AsyncSessionLocal() as db:
+            await seed_all(db)
+    except Exception as e:
+        logger.warning(f"Failed to seed database: {e}. This is OK if data already exists.")
 
 
 async def get_db() -> AsyncSession:

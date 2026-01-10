@@ -1,6 +1,7 @@
 """
 Person Tracking Module using ByteTrack
 Assigns unique IDs to persons across video frames
+Updated: Fixed class_id handling for ByteTrack tracker
 """
 
 from typing import List, Dict, Optional
@@ -103,8 +104,19 @@ class PersonTracker:
         # Extract bboxes in xyxy format
         xyxy = []
         confidences = []
+        class_ids = []
 
         for det in detections:
+            # Safety check: skip None detections
+            if det is None:
+                logger.warning("Skipping None detection in tracker")
+                continue
+
+            # Safety check: ensure bbox exists
+            if "bbox" not in det:
+                logger.warning(f"Skipping detection without bbox: {det}")
+                continue
+
             bbox = det["bbox"]
             x1 = bbox["x"]
             y1 = bbox["y"]
@@ -113,11 +125,18 @@ class PersonTracker:
 
             xyxy.append([x1, y1, x2, y2])
             confidences.append(det.get("confidence", 1.0))
+            # All persons have class_id 0 (person class)
+            class_ids.append(0)
 
-        # Create supervision Detections
+        # If all detections were filtered out, return empty
+        if len(xyxy) == 0:
+            return sv.Detections.empty()
+
+        # Create supervision Detections with class_id
         return sv.Detections(
             xyxy=np.array(xyxy, dtype=np.float32),
-            confidence=np.array(confidences, dtype=np.float32)
+            confidence=np.array(confidences, dtype=np.float32),
+            class_id=np.array(class_ids, dtype=np.int32)
         )
 
     def _add_track_ids(
@@ -137,14 +156,27 @@ class PersonTracker:
         """
         # Supervision returns detections in same order, just adds tracker_id
         detections_with_ids = []
+        tracked_idx = 0  # Index in tracked_detections
 
         for i, det in enumerate(original_detections):
+            # Skip None detections (should not happen but be defensive)
+            if det is None:
+                logger.warning(f"Skipping None detection at index {i}")
+                continue
+
+            # Skip detections without bbox
+            if "bbox" not in det:
+                logger.warning(f"Skipping detection without bbox at index {i}")
+                continue
+
             # Copy detection
             det_with_id = det.copy()
 
             # Add track ID if available
-            if tracked_detections.tracker_id is not None and i < len(tracked_detections.tracker_id):
-                det_with_id["track_id"] = int(tracked_detections.tracker_id[i])
+            if (tracked_detections.tracker_id is not None and
+                tracked_idx < len(tracked_detections.tracker_id)):
+                det_with_id["track_id"] = int(tracked_detections.tracker_id[tracked_idx])
+                tracked_idx += 1
             else:
                 det_with_id["track_id"] = None
 

@@ -12,6 +12,7 @@ from backend.database import crud, schemas
 from backend.database.models import Violation, ViolationSeverity
 from backend.utils.logger import logger
 from backend.utils.snapshots import save_snapshot_image
+from backend.services.notification_service import get_notification_service
 
 
 class ViolationService:
@@ -36,20 +37,22 @@ class ViolationService:
     
     async def get_violations(
         self,
-        filters: schemas.ViolationFilterParams
+        filters: schemas.ViolationFilterParams,
+        organization_id: Optional[int] = None
     ) -> Tuple[List[Violation], int]:
         """
         Get violations with filtering and pagination
         
         Args:
             filters: Filter parameters
+            organization_id: Organization ID for multi-tenant filtering (required for data isolation)
             
         Returns:
             Tuple of (violations list, total count)
         """
-        logger.debug(f"Fetching violations with filters: {filters}")
-        violations, total = await crud.get_violations(self.db, filters)
-        logger.info(f"Retrieved {len(violations)} violations (total: {total})")
+        logger.debug(f"Fetching violations with filters: {filters}, organization_id: {organization_id}")
+        violations, total = await crud.get_violations(self.db, filters, organization_id=organization_id)
+        logger.info(f"Retrieved {len(violations)} violations (total: {total}) for organization {organization_id}")
         return violations, total
     
     async def get_violation_by_id(self, violation_id: int) -> Optional[Violation]:
@@ -113,17 +116,43 @@ class ViolationService:
                 violation_data.missing_ppe
             )
             logger.debug(f"Calculated severity: {violation_data.severity}")
-        
+
         # Persist snapshot if provided
         if violation_data.frame_snapshot:
             snapshot_path = save_snapshot_image(violation_data.frame_snapshot)
             violation_data.snapshot_path = snapshot_path
             violation_data.frame_snapshot = None  # do not store base64 in DB
 
-        # Create violation
-        violation = await crud.create_violation(self.db, violation_data)
+        # Create violation with organization_id from camera
+        violation = await crud.create_violation(self.db, violation_data, organization_id=camera.organization_id)
         logger.info(f"Violation {violation.id} created successfully")
-        
+
+        # Send email notification (non-blocking)
+        try:
+            notification_service = get_notification_service()
+
+            # Prepare violation data for email
+            email_violation_data = {
+                'id': violation.id,
+                'severity': violation.severity.value if violation.severity else 'medium',
+                'camera_id': violation.camera_id,
+                'camera_name': camera.name,
+                'location': camera.location or 'Unknown',
+                'missing_ppe': [item.get('type', '') for item in violation_data.missing_ppe],
+                'timestamp': violation.timestamp.isoformat(),
+                'confidence': violation.confidence,
+            }
+
+            # Send notification (async)
+            await notification_service.send_violation_alert_async(
+                db=self.db,
+                violation_data=email_violation_data,
+                snapshot_path=violation.snapshot_path
+            )
+        except Exception as e:
+            # Don't fail violation creation if notification fails
+            logger.error(f"Failed to send violation notification: {str(e)}")
+
         return violation
     
     async def update_violation(
@@ -187,7 +216,8 @@ class ViolationService:
         self,
         domain_id: Optional[int] = None,
         start_date: Optional[datetime] = None,
-        end_date: Optional[datetime] = None
+        end_date: Optional[datetime] = None,
+        organization_id: Optional[int] = None
     ) -> dict:
         """
         Get violation statistics
@@ -196,16 +226,18 @@ class ViolationService:
             domain_id: Optional domain filter
             start_date: Optional start date filter
             end_date: Optional end date filter
+            organization_id: Organization ID for multi-tenant filtering (required for data isolation)
             
         Returns:
             Statistics dictionary
         """
-        logger.debug(f"Fetching statistics for domain {domain_id}")
+        logger.debug(f"Fetching statistics for domain {domain_id}, organization {organization_id}")
         stats = await crud.get_violation_stats(
             self.db,
             domain_id,
             start_date,
-            end_date
+            end_date,
+            organization_id=organization_id
         )
         logger.debug(f"Statistics retrieved: {stats}")
         return stats

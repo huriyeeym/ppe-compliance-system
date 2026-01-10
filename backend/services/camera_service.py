@@ -35,57 +35,61 @@ class CameraService:
         self,
         skip: int = 0,
         limit: int = 100,
-        domain_id: Optional[int] = None
+        domain_id: Optional[int] = None,
+        organization_id: Optional[int] = None
     ) -> List[Camera]:
         """
-        Get all cameras with optional domain filtering
+        Get all cameras with optional domain and organization filtering
         
         Args:
             skip: Number of records to skip
             limit: Maximum number of records
             domain_id: Optional domain filter
+            organization_id: Organization ID for multi-tenant filtering (required for data isolation)
             
         Returns:
             List of cameras
         """
-        logger.debug(f"Fetching cameras (skip={skip}, limit={limit}, domain_id={domain_id})")
+        logger.debug(f"Fetching cameras (skip={skip}, limit={limit}, domain_id={domain_id}, organization_id={organization_id})")
         
         if domain_id:
-            cameras = await crud.get_cameras_by_domain(self.db, domain_id)
+            cameras = await crud.get_cameras_by_domain(self.db, domain_id, organization_id=organization_id)
         else:
-            cameras = await crud.get_cameras(self.db, skip=skip, limit=limit)
+            cameras = await crud.get_cameras(self.db, skip=skip, limit=limit, organization_id=organization_id)
         
-        logger.info(f"Retrieved {len(cameras)} cameras")
+        logger.info(f"Retrieved {len(cameras)} cameras for organization {organization_id}")
         return cameras
     
-    async def get_by_id(self, camera_id: int) -> Optional[Camera]:
+    async def get_by_id(self, camera_id: int, organization_id: Optional[int] = None) -> Optional[Camera]:
         """
         Get camera by ID
         
         Args:
             camera_id: Camera ID
+            organization_id: Organization ID for multi-tenant filtering (optional, but recommended for security)
             
         Returns:
             Camera if found, None otherwise
         """
-        logger.debug(f"Fetching camera {camera_id}")
-        camera = await crud.get_camera_by_id(self.db, camera_id)
+        logger.debug(f"Fetching camera {camera_id} for organization {organization_id}")
+        camera = await crud.get_camera_by_id(self.db, camera_id, organization_id=organization_id)
         if camera:
             logger.debug(f"Camera {camera_id} found: {camera.name}")
         else:
             logger.warning(f"Camera {camera_id} not found")
         return camera
     
-    async def create(self, camera_data: schemas.CameraCreate) -> Camera:
+    async def create(self, camera_data: schemas.CameraCreate, organization_id: Optional[int] = None) -> Camera:
         """
         Create a new camera
         
         Business logic:
         - Validate domain exists
-        - Create camera record
+        - Create camera record with organization_id
         
         Args:
             camera_data: Camera creation data
+            organization_id: Organization ID (required for multi-tenant isolation)
             
         Returns:
             Created camera
@@ -93,7 +97,7 @@ class CameraService:
         Raises:
             ValueError: If domain not found
         """
-        logger.info(f"Creating camera: {camera_data.name}")
+        logger.info(f"Creating camera: {camera_data.name} for organization {organization_id}")
         
         # Validate domain exists
         domain = await crud.get_domain_by_id(self.db, camera_data.domain_id)
@@ -102,8 +106,8 @@ class CameraService:
             logger.error(error_msg)
             raise ValueError(error_msg)
         
-        # Create camera
-        camera = await crud.create_camera(self.db, camera_data)
+        # Create camera with organization_id
+        camera = await crud.create_camera(self.db, camera_data, organization_id=organization_id)
         logger.info(f"Camera {camera.id} created successfully: {camera.name}")
         
         return camera

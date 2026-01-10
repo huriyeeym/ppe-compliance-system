@@ -12,12 +12,15 @@ from backend.database import crud, schemas
 from backend.services.domain_service import DomainService
 from backend.services.ppe_type_service import PPETypeService
 from backend.utils.logger import logger
+from backend.utils.permissions import has_permission, Permission
+from backend.api.auth import get_current_user
+from backend.database.models import UserRole
 
 
 router = APIRouter(prefix="/domains", tags=["Domains"])
 
 
-@router.get("/", response_model=List[schemas.DomainResponse])
+@router.get("", response_model=List[schemas.DomainResponse])
 async def get_domains(
     skip: int = 0,
     limit: int = 100,
@@ -52,10 +55,11 @@ async def get_domain(
     return domain
 
 
-@router.post("/", response_model=schemas.DomainResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=schemas.DomainResponse, status_code=status.HTTP_201_CREATED)
 async def create_domain(
     domain: schemas.DomainCreate,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user)
 ):
     """
     Create a new domain
@@ -65,7 +69,15 @@ async def create_domain(
     - **icon**: Optional emoji icon
     - **description**: Optional description
     - **status**: Domain status (active/planned)
+    
+    **Permissions:**
+    - Only ADMIN and SUPER_ADMIN can create domains
     """
+    if not has_permission(current_user, Permission.DOMAINS_CREATE):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission to create domains"
+        )
     service = DomainService(db)
     try:
         return await service.create(domain)
@@ -80,13 +92,24 @@ async def create_domain(
 async def update_domain(
     domain_id: int,
     domain: schemas.DomainUpdate,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user)
 ):
     """
     Update a domain
     
     All fields are optional. Only provided fields will be updated.
+    
+    **Permissions:**
+    - Only SUPER_ADMIN can update domains (status, name, description)
+    - ADMIN cannot update domains (they are system-level)
     """
+    # Only SUPER_ADMIN can update domains
+    if current_user.role != UserRole.SUPER_ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only SUPER_ADMIN can update domains. Domains are system-level and cannot be modified by organization admins."
+        )
     service = DomainService(db)
     updated_domain = await service.update(domain_id, domain)
     if not updated_domain:
@@ -100,13 +123,23 @@ async def update_domain(
 @router.delete("/{domain_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_domain(
     domain_id: int,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user)
 ):
     """
     Delete a domain
     
-    **Warning:** This will cascade delete all related cameras and violations!
+    **Warning:** Domains are system-level and should not be deleted.
+    This endpoint is disabled for all users including SUPER_ADMIN.
+    Domains are defined in seed data and represent trained models.
+    
+    **Permissions:**
+    - Disabled for all users (domains are system-level, cannot be deleted)
     """
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Domains cannot be deleted. They are system-level entities defined in seed data. To remove a domain from your organization, use the organization domain management endpoints."
+    )
     service = DomainService(db)
     success = await service.delete(domain_id)
     if not success:

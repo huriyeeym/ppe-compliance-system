@@ -7,49 +7,59 @@ from backend.database.models import Domain, PPEType, DomainPPERule, DomainStatus
 from backend.utils.logger import logger
 
 # ==========================================
-# DOMAINS (5 total: 2 active, 3 planned)
+# DOMAINS (6 total: 4 active, 2 planned)
+# Active: Construction, Manufacturing, Mining, Warehouse
+# Planned: Healthcare, Food Production
 # ==========================================
 
 DOMAINS = [
     {
         "id": 1,
-        "name": "İnşaat Alanı",
+        "name": "Construction",
         "type": "construction",
-        "icon": "🏗️",
-        "description": "İnşaat şantiyesi, açık alan yapım işleri",
-        "status": DomainStatus.ACTIVE  # Model eğitildi
+        "icon": "⚒",  # Hammer and pick - construction tools
+        "description": "Construction sites, open-area building projects",
+        "status": DomainStatus.ACTIVE  # Model trained
     },
     {
         "id": 2,
-        "name": "Üretim Sanayi",
+        "name": "Manufacturing",
         "type": "manufacturing",
-        "icon": "🏭",
-        "description": "Fabrika, üretim bandı, montaj alanı",
-        "status": DomainStatus.ACTIVE  # Model eğitildi
+        "icon": "⚙",  # Gear - industrial machinery
+        "description": "Factory, production lines, assembly areas",
+        "status": DomainStatus.ACTIVE  # Model trained
     },
     {
         "id": 3,
-        "name": "Madencilik",
+        "name": "Mining",
         "type": "mining",
-        "icon": "⛏️",
-        "description": "Yeraltı/yerüstü maden ocakları",
-        "status": DomainStatus.PLANNED  # Model yok (henüz)
+        "icon": "⛏",  # Pickaxe - mining tool
+        "description": "Underground/surface mining operations",
+        "status": DomainStatus.ACTIVE  # Model trained
     },
     {
         "id": 4,
-        "name": "Sağlık/Hastane",
+        "name": "Healthcare",
         "type": "healthcare",
-        "icon": "🏥",
-        "description": "Hastane, klinik, tıbbi laboratuvar",
+        "icon": "⚕",  # Rod of Asclepius - medical symbol
+        "description": "Hospitals, clinics, medical laboratories",
         "status": DomainStatus.PLANNED
     },
     {
         "id": 5,
-        "name": "Gıda Üretimi",
+        "name": "Food Production",
         "type": "food_production",
-        "icon": "🍔",
-        "description": "Gıda işleme tesisi, endüstriyel mutfak",
+        "icon": "🍴",  # Fork and knife - food service
+        "description": "Food processing facilities, industrial kitchens",
         "status": DomainStatus.PLANNED
+    },
+    {
+        "id": 6,
+        "name": "Warehouse",
+        "type": "warehouse",
+        "icon": "📦",  # Package - warehouse symbol
+        "description": "Warehouses, storage facilities, logistics centers",
+        "status": DomainStatus.ACTIVE  # Model trained
     }
 ]
 
@@ -58,11 +68,11 @@ DOMAINS = [
 # ==========================================
 
 PPE_TYPES = [
-    # ========== İNŞAAT PPE'leri (Domain 1) ==========
+    # ========== CONSTRUCTION PPE (Domain 1) ==========
     {
         "id": 1,
         "name": "hard_hat",
-        "display_name": "Baret",
+        "display_name": "Hard Hat",
         "category": "head",
         "model_class_name": "hardhat",
         "status": DomainStatus.ACTIVE
@@ -70,7 +80,7 @@ PPE_TYPES = [
     {
         "id": 2,
         "name": "safety_vest",
-        "display_name": "Reflektif Yelek",
+        "display_name": "Safety Vest",
         "category": "body",
         "model_class_name": "safety_vest",
         "status": DomainStatus.ACTIVE
@@ -78,17 +88,17 @@ PPE_TYPES = [
     {
         "id": 3,
         "name": "safety_boots",
-        "display_name": "Güvenlik Botu",
+        "display_name": "Safety Boots",
         "category": "foot",
         "model_class_name": "boots",
         "status": DomainStatus.ACTIVE
     },
-    
-    # ========== ÜRETİM SANAYİ PPE'leri (Domain 2) ==========
+
+    # ========== MANUFACTURING PPE (Domain 2) ==========
     {
         "id": 4,
         "name": "safety_glasses",
-        "display_name": "Koruyucu Gözlük",
+        "display_name": "Safety Glasses",
         "category": "eye",
         "model_class_name": "goggles",
         "status": DomainStatus.ACTIVE
@@ -96,7 +106,7 @@ PPE_TYPES = [
     {
         "id": 5,
         "name": "face_mask",
-        "display_name": "Maske",
+        "display_name": "Face Mask",
         "category": "face",
         "model_class_name": "mask",
         "status": DomainStatus.ACTIVE
@@ -104,7 +114,7 @@ PPE_TYPES = [
     {
         "id": 6,
         "name": "gloves",
-        "display_name": "Eldiven",
+        "display_name": "Gloves",
         "category": "hand",
         "model_class_name": "gloves",
         "status": DomainStatus.ACTIVE
@@ -112,7 +122,7 @@ PPE_TYPES = [
     {
         "id": 7,
         "name": "ear_protection",
-        "display_name": "Kulaklık (İşitme Koruyucu)",
+        "display_name": "Ear Protection",
         "category": "ear",
         "model_class_name": "earmuff",
         "status": DomainStatus.ACTIVE
@@ -120,7 +130,7 @@ PPE_TYPES = [
     {
         "id": 8,
         "name": "protective_clothing",
-        "display_name": "Koruyucu Giysi",
+        "display_name": "Protective Clothing",
         "category": "body",
         "model_class_name": "protective_suit",
         "status": DomainStatus.ACTIVE
@@ -128,7 +138,7 @@ PPE_TYPES = [
     {
         "id": 9,
         "name": "welding_helmet",
-        "display_name": "Kaynak Maskesi",
+        "display_name": "Welding Helmet",
         "category": "head",
         "model_class_name": "welding_mask",
         "status": DomainStatus.ACTIVE
@@ -136,17 +146,17 @@ PPE_TYPES = [
     {
         "id": 10,
         "name": "respirator",
-        "display_name": "Solunum Maskesi",
+        "display_name": "Respirator",
         "category": "face",
         "model_class_name": "respirator",
         "status": DomainStatus.ACTIVE
     },
-    
-    # ========== MADENCİLİK PPE'leri (Domain 3 - PLANNED) ==========
+
+    # ========== MINING PPE (Domain 3 - PLANNED) ==========
     {
         "id": 20,
         "name": "mining_helmet_with_lamp",
-        "display_name": "Madenci Bareti (Kafa Lambası)",
+        "display_name": "Mining Helmet with Lamp",
         "category": "head",
         "model_class_name": "mining_helmet",
         "status": DomainStatus.PLANNED
@@ -154,7 +164,7 @@ PPE_TYPES = [
     {
         "id": 21,
         "name": "dust_mask",
-        "display_name": "Toz Maskesi",
+        "display_name": "Dust Mask",
         "category": "face",
         "model_class_name": "dust_mask",
         "status": DomainStatus.PLANNED
@@ -162,17 +172,17 @@ PPE_TYPES = [
     {
         "id": 22,
         "name": "steel_toe_boots",
-        "display_name": "Çelik Burunlu Bot",
+        "display_name": "Steel-Toe Boots",
         "category": "foot",
         "model_class_name": "steel_boots",
         "status": DomainStatus.PLANNED
     },
-    
-    # ========== SAĞLIK PPE'leri (Domain 4 - PLANNED) ==========
+
+    # ========== HEALTHCARE PPE (Domain 4 - PLANNED) ==========
     {
         "id": 30,
         "name": "surgical_mask",
-        "display_name": "Cerrahi Maske",
+        "display_name": "Surgical Mask",
         "category": "face",
         "model_class_name": "surgical_mask",
         "status": DomainStatus.PLANNED
@@ -180,7 +190,7 @@ PPE_TYPES = [
     {
         "id": 31,
         "name": "lab_coat",
-        "display_name": "Önlük",
+        "display_name": "Lab Coat",
         "category": "body",
         "model_class_name": "lab_coat",
         "status": DomainStatus.PLANNED
@@ -188,7 +198,7 @@ PPE_TYPES = [
     {
         "id": 32,
         "name": "medical_gloves",
-        "display_name": "Medikal Eldiven",
+        "display_name": "Medical Gloves",
         "category": "hand",
         "model_class_name": "medical_gloves",
         "status": DomainStatus.PLANNED
@@ -196,17 +206,17 @@ PPE_TYPES = [
     {
         "id": 33,
         "name": "face_shield",
-        "display_name": "Yüz Siperliği",
+        "display_name": "Face Shield",
         "category": "face",
         "model_class_name": "face_shield",
         "status": DomainStatus.PLANNED
     },
-    
-    # ========== GIDA PPE'leri (Domain 5 - PLANNED) ==========
+
+    # ========== FOOD PRODUCTION PPE (Domain 5 - PLANNED) ==========
     {
         "id": 40,
         "name": "hairnet",
-        "display_name": "Bone / Saç Filesi",
+        "display_name": "Hairnet",
         "category": "head",
         "model_class_name": "hairnet",
         "status": DomainStatus.PLANNED
@@ -214,7 +224,7 @@ PPE_TYPES = [
     {
         "id": 41,
         "name": "food_apron",
-        "display_name": "Gıda Önlüğü",
+        "display_name": "Food Apron",
         "category": "body",
         "model_class_name": "apron",
         "status": DomainStatus.PLANNED
@@ -222,7 +232,7 @@ PPE_TYPES = [
     {
         "id": 42,
         "name": "food_gloves",
-        "display_name": "Gıda Eldiveni",
+        "display_name": "Food Gloves",
         "category": "hand",
         "model_class_name": "food_gloves",
         "status": DomainStatus.PLANNED
@@ -234,80 +244,124 @@ PPE_TYPES = [
 # ==========================================
 
 DOMAIN_PPE_RULES = [
-    # ========== İNŞAAT KURALLARI (Domain 1) ==========
+    # ========== CONSTRUCTION RULES (Domain 1) ==========
     {
         "domain_id": 1,
-        "ppe_type_id": 1,  # Baret
+        "ppe_type_id": 1,  # Hard Hat
         "is_required": True,
         "priority": 1,
-        "warning_message": "İnşaat alanında baret zorunludur!"
+        "warning_message": "Hard hat is required on construction sites!"
     },
     {
         "domain_id": 1,
-        "ppe_type_id": 2,  # Yelek
+        "ppe_type_id": 2,  # Safety Vest
         "is_required": True,
         "priority": 1,
-        "warning_message": "İnşaat alanında reflektif yelek zorunludur!"
+        "warning_message": "Safety vest is required on construction sites!"
     },
     {
         "domain_id": 1,
-        "ppe_type_id": 3,  # Güvenlik Botu
+        "ppe_type_id": 3,  # Safety Boots
         "is_required": False,
         "priority": 2,
-        "warning_message": "Güvenlik botu önerilir"
+        "warning_message": "Safety boots are recommended"
     },
-    
-    # ========== ÜRETİM SANAYİ KURALLARI (Domain 2) ==========
+
+    # ========== MANUFACTURING RULES (Domain 2) ==========
     {
         "domain_id": 2,
-        "ppe_type_id": 4,  # Gözlük
+        "ppe_type_id": 4,  # Safety Glasses
         "is_required": True,
         "priority": 1,
-        "warning_message": "Üretim bandında koruyucu gözlük zorunludur!"
+        "warning_message": "Safety glasses are required on production lines!"
     },
     {
         "domain_id": 2,
-        "ppe_type_id": 7,  # Kulaklık
+        "ppe_type_id": 7,  # Ear Protection
         "is_required": True,
         "priority": 1,
-        "warning_message": "Gürültülü ortamda kulaklık zorunludur!"
+        "warning_message": "Ear protection is required in noisy environments!"
     },
     {
         "domain_id": 2,
-        "ppe_type_id": 6,  # Eldiven
+        "ppe_type_id": 6,  # Gloves
         "is_required": True,
         "priority": 2,
-        "warning_message": "Makine operatörleri için eldiven zorunludur!"
+        "warning_message": "Gloves are required for machine operators!"
     },
     {
         "domain_id": 2,
-        "ppe_type_id": 1,  # Baret (üretimde de)
+        "ppe_type_id": 1,  # Hard Hat (in manufacturing too)
         "is_required": False,
         "priority": 2,
-        "warning_message": "Belirli alanlarda baret gereklidir"
+        "warning_message": "Hard hat is required in certain areas"
     },
-    
-    # ========== MADENCİLİK KURALLARI (Domain 3 - PLANNED) ==========
+
+    # ========== MINING RULES (Domain 3) ==========
     {
         "domain_id": 3,
-        "ppe_type_id": 20,  # Madenci Bareti
+        "ppe_type_id": 1,  # Hard Hat (Mining Helmet - using same model class)
         "is_required": True,
         "priority": 1,
-        "warning_message": "Maden ocağında kafa lambası zorunludur!"
-    },
-    {
-        "domain_id": 3,
-        "ppe_type_id": 21,  # Toz Maskesi
-        "is_required": True,
-        "priority": 1,
-        "warning_message": "Yeraltında toz maskesi zorunludur!"
+        "warning_message": "Hard hat/helmet is required in mines!"
     },
     {
         "domain_id": 3,
-        "ppe_type_id": 22,  # Çelik Burunlu Bot
+        "ppe_type_id": 2,  # Safety Vest
         "is_required": True,
         "priority": 1,
-        "warning_message": "Maden botları zorunludur!"
+        "warning_message": "Safety vest is required in mining operations!"
+    },
+    {
+        "domain_id": 3,
+        "ppe_type_id": 5,  # Face Mask (Dust Mask - using same model class)
+        "is_required": True,
+        "priority": 1,
+        "warning_message": "Dust mask is required underground!"
+    },
+    {
+        "domain_id": 3,
+        "ppe_type_id": 3,  # Safety Boots (Steel-Toe Boots)
+        "is_required": True,
+        "priority": 1,
+        "warning_message": "Safety boots are required in mines!"
+    },
+    {
+        "domain_id": 3,
+        "ppe_type_id": 6,  # Gloves
+        "is_required": True,
+        "priority": 2,
+        "warning_message": "Gloves are recommended for mining operations"
+    },
+
+    # ========== WAREHOUSE RULES (Domain 6) ==========
+    {
+        "domain_id": 6,
+        "ppe_type_id": 1,  # Hard Hat
+        "is_required": True,
+        "priority": 1,
+        "warning_message": "Hard hat is required in warehouse areas!"
+    },
+    {
+        "domain_id": 6,
+        "ppe_type_id": 2,  # Safety Vest
+        "is_required": True,
+        "priority": 1,
+        "warning_message": "Safety vest is required for visibility in warehouses!"
+    },
+    {
+        "domain_id": 6,
+        "ppe_type_id": 3,  # Safety Boots
+        "is_required": True,
+        "priority": 1,
+        "warning_message": "Safety boots are required in warehouse operations!"
+    },
+    {
+        "domain_id": 6,
+        "ppe_type_id": 6,  # Gloves
+        "is_required": False,
+        "priority": 2,
+        "warning_message": "Gloves are recommended for handling materials"
     },
 ]
 

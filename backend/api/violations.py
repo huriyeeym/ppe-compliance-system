@@ -15,13 +15,15 @@ from backend.database import crud, schemas
 from backend.database.models import ViolationSeverity, ViolationStatus
 from backend.services.violation_service import ViolationService
 from backend.utils.logger import logger
+from backend.utils.permissions import has_permission, Permission
 from backend.config import settings
+from backend.api.auth import get_current_user
 
 
 router = APIRouter(prefix="/violations", tags=["Violations"])
 
 
-@router.get("/", response_model=schemas.PaginatedResponse)
+@router.get("", response_model=schemas.PaginatedResponse)
 async def get_violations(
     domain_id: Optional[int] = Query(None, description="Filter by domain"),
     camera_id: Optional[int] = Query(None, description="Filter by camera"),
@@ -32,6 +34,7 @@ async def get_violations(
     end_date: Optional[datetime] = Query(None, description="Filter by end date (ISO format)"),
     skip: int = Query(0, ge=0, description="Number of records to skip"),
     limit: int = Query(50, ge=1, le=100, description="Maximum number of records"),
+    current_user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -66,8 +69,9 @@ async def get_violations(
     )
     
     # Use service layer instead of direct CRUD
+    # CRITICAL: Filter by organization_id for multi-tenant isolation
     service = ViolationService(db)
-    violations, total = await service.get_violations(filters)
+    violations, total = await service.get_violations(filters, organization_id=current_user.organization_id)
     
     return schemas.PaginatedResponse(
         total=total,
@@ -82,7 +86,8 @@ async def get_violation_statistics(
     domain_id: Optional[int] = Query(None, description="Filter by domain"),
     start_date: Optional[datetime] = Query(None, description="Start date"),
     end_date: Optional[datetime] = Query(None, description="End date"),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user)
 ):
     """
     Get violation statistics
@@ -91,22 +96,29 @@ async def get_violation_statistics(
     - total_violations: Total number of violations
     - acknowledged: Number of acknowledged violations
     - pending: Number of pending violations
+    
+    **Note:** Only statistics from the current user's organization are returned.
     """
     service = ViolationService(db)
-    stats = await service.get_statistics(domain_id, start_date, end_date)
+    # CRITICAL: Filter by organization_id for multi-tenant isolation
+    stats = await service.get_statistics(domain_id, start_date, end_date, organization_id=current_user.organization_id)
     return stats
 
 
 @router.get("/{violation_id}", response_model=schemas.ViolationResponse)
 async def get_violation(
     violation_id: int,
+    current_user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
     """
     Get a specific violation by ID
+    
+    **Note:** Only violations from the current user's organization are accessible.
     """
     service = ViolationService(db)
-    violation = await service.get_violation_by_id(violation_id)
+    # CRITICAL: Filter by organization_id for multi-tenant isolation
+    violation = await service.get_violation_by_id(violation_id, organization_id=current_user.organization_id)
     if not violation:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -115,7 +127,7 @@ async def get_violation(
     return violation
 
 
-@router.post("/", response_model=schemas.ViolationResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=schemas.ViolationResponse, status_code=status.HTTP_201_CREATED)
 async def create_violation(
     violation: schemas.ViolationCreate,
     db: AsyncSession = Depends(get_db)
@@ -149,7 +161,8 @@ async def create_violation(
 async def update_violation(
     violation_id: int,
     violation: schemas.ViolationUpdate,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user)
 ):
     """
     Update a violation (workflow management)
@@ -164,7 +177,27 @@ async def update_violation(
     - **acknowledged**: Mark violation as acknowledged
     - **acknowledged_by**: Username of person who acknowledged
     - **notes**: Add notes about the violation
+    
+    **Permissions:**
+    - Status updates require MANAGER or ADMIN role
+    - Notes/corrective action updates require MANAGER or ADMIN role
     """
+    # Check permissions based on what's being updated
+    if violation.status and violation.status in ['closed', 'false_positive']:
+        # Full status update requires MANAGER or ADMIN
+        if not has_permission(current_user, Permission.VIOLATIONS_UPDATE_STATUS):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You do not have permission to update violation status"
+            )
+    elif violation.notes or violation.corrective_action:
+        # Notes/corrective action updates require MANAGER or ADMIN
+        if not has_permission(current_user, Permission.VIOLATIONS_UPDATE_NOTES):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You do not have permission to update violation notes or corrective actions"
+            )
+    
     service = ViolationService(db)
     updated_violation = await service.update_violation(violation_id, violation)
     if not updated_violation:
@@ -208,13 +241,23 @@ async def acknowledge_violation(
     violation_id: int,
     acknowledged_by: str = Query(..., description="Username of person acknowledging"),
     notes: Optional[str] = Query(None, description="Optional notes"),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user)
 ):
     """
     Acknowledge a violation (shortcut endpoint)
     
     This is a convenience endpoint equivalent to PUT with acknowledged=True
+    
+    **Permissions:**
+    - OPERATOR, MANAGER, and ADMIN can acknowledge violations
     """
+    if not has_permission(current_user, Permission.VIOLATIONS_ACKNOWLEDGE):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission to acknowledge violations"
+        )
+    
     service = ViolationService(db)
     updated_violation = await service.acknowledge_violation(
         violation_id,

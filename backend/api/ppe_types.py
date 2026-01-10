@@ -16,7 +16,7 @@ from backend.utils.logger import logger
 router = APIRouter(prefix="/ppe-types", tags=["PPE Types"])
 
 
-@router.get("/", response_model=List[schemas.PPETypeResponse])
+@router.get("", response_model=List[schemas.PPETypeResponse])
 async def get_ppe_types(
     skip: int = 0,
     limit: int = 100,
@@ -51,7 +51,7 @@ async def get_ppe_type(
     return ppe_type
 
 
-@router.post("/", response_model=schemas.PPETypeResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=schemas.PPETypeResponse, status_code=status.HTTP_201_CREATED)
 async def create_ppe_type(
     ppe_type: schemas.PPETypeCreate,
     db: AsyncSession = Depends(get_db)
