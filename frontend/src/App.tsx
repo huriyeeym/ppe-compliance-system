@@ -8,7 +8,9 @@ import LiveCamera from './pages/LiveCamera'
 import Report from './pages/Report'
 import Analytics from './pages/Analytics'
 import Configure from './pages/Configure'
-import Admin from './pages/Admin'
+import UserManagement from './pages/UserManagement'
+import SystemSettings from './pages/SystemSettings'
+import OrganizationSettings from './pages/OrganizationSettings'
 import Login from './pages/Login'
 import RequireAuth from './components/auth/RequireAuth'
 
@@ -48,17 +50,49 @@ function App() {
           <Route path="/events" element={<Events />} />
           <Route path="/live-camera" element={<LiveCamera />} />
           <Route path="/report" element={<Report />} />
-          <Route path="/analytics" element={<Analytics />} />
-          <Route path="/configure" element={<Configure />} />
           <Route
-            path="/admin"
+            path="/analytics"
             element={
-              <RequireAuth role="admin">
-                <Admin />
+              <RequireAuth role={['admin', 'manager']}>
+                <Analytics />
               </RequireAuth>
             }
           />
-          <Route path="/login" element={<Login />} />
+          <Route
+            path="/configure"
+            element={
+              <RequireAuth role={['admin', 'manager']}>
+                <Configure />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/users"
+            element={
+              <RequireAuth role="admin">
+                <UserManagement />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/settings"
+            element={
+              <RequireAuth role="admin">
+                <SystemSettings />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/organization"
+            element={
+              <RequireAuth role="admin">
+                <OrganizationSettings />
+              </RequireAuth>
+            }
+          />
+          <Route path="/sign-in" element={<Login />} />
+          <Route path="/signup" element={<Login />} />
+          <Route path="/forgot-password" element={<Login />} />
         </Routes>
       </Layout>
     </BrowserRouter>

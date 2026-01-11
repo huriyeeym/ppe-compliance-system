@@ -25,8 +25,19 @@ class UserService:
     async def get_by_id(self, user_id: int) -> Optional[User]:
         return await crud.get_user(self.db, user_id)
 
-    async def list_users(self, skip: int = 0, limit: int = 100) -> List[User]:
-        return await crud.get_users(self.db, skip=skip, limit=limit)
+    async def list_users(self, skip: int = 0, limit: int = 100, organization_id: Optional[int] = None) -> tuple[List[User], int]:
+        """
+        List users with optional organization filtering
+        
+        Args:
+            skip: Number of records to skip
+            limit: Maximum number of records to return
+            organization_id: Organization ID for multi-tenant filtering (optional)
+            
+        Returns:
+            Tuple of (List of users, total count), filtered by organization if provided
+        """
+        return await crud.get_users(self.db, skip=skip, limit=limit, organization_id=organization_id)
 
     async def create_user(self, user_in: schemas.UserCreate) -> User:
         """

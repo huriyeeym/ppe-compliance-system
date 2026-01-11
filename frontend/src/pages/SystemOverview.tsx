@@ -10,9 +10,9 @@ export default function SystemOverview() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    // Load initial data if needed
+    // Domains are already loaded from DomainContext (filtered to user's selected domains)
     setLoading(false)
-  }, [])
+  }, [domains])
 
   if (loading) {
     return (
@@ -28,7 +28,7 @@ export default function SystemOverview() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="mb-8">
+      <div className="mb-6">
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-page-title flex items-center gap-2">

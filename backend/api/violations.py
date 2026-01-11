@@ -172,6 +172,7 @@ async def update_violation(
     - **assigned_to**: Assign to user (email/username)
     - **notes**: Add notes/comments
     - **corrective_action**: Describe corrective action taken
+    - **detected_user_id**: Manually reassign detected user (face recognition match)
     
     **Legacy fields (deprecated):**
     - **acknowledged**: Mark violation as acknowledged
@@ -181,6 +182,7 @@ async def update_violation(
     **Permissions:**
     - Status updates require MANAGER or ADMIN role
     - Notes/corrective action updates require MANAGER or ADMIN role
+    - User reassignment (detected_user_id) requires MANAGER or ADMIN role
     """
     # Check permissions based on what's being updated
     if violation.status and violation.status in ['closed', 'false_positive']:
@@ -196,6 +198,13 @@ async def update_violation(
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="You do not have permission to update violation notes or corrective actions"
+            )
+    elif violation.detected_user_id is not None:
+        # User reassignment requires MANAGER or ADMIN
+        if not has_permission(current_user, Permission.VIOLATIONS_UPDATE_NOTES):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You do not have permission to reassign detected user"
             )
     
     service = ViolationService(db)

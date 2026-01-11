@@ -8,6 +8,7 @@ from fastapi import APIRouter, File, UploadFile, HTTPException, Query, Depends
 import numpy as np
 import cv2
 from datetime import datetime
+from pathlib import Path
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.ml_engine.detector import PPEDetector
@@ -349,6 +350,55 @@ async def detect_frame(
                         }
                         mapped_severity = severity_mapping.get(severity, "medium")
                         
+                        # ✅ Face Recognition: Try to match user from snapshot
+                        detected_user_id = None
+                        face_match_confidence = None
+                        if snapshot_path:
+                            logger.info(f"[FACE RECOGNITION] Starting face matching for violation snapshot: {snapshot_path}")
+                            try:
+                                # Get organization_id from camera
+                                from backend.database import crud
+                                camera = await crud.get_camera_by_id(db, camera_id)
+                                if camera and camera.organization_id:
+                                    logger.info(f"[FACE RECOGNITION] Camera found: id={camera_id}, organization_id={camera.organization_id}")
+                                    # Try to import FaceRecognitionService - make it optional
+                                    try:
+                                        from backend.services.face_recognition_service import FaceRecognitionService
+                                        from backend.config import settings
+                                        
+                                        logger.info("[FACE RECOGNITION] FaceRecognitionService imported successfully")
+                                        face_service = FaceRecognitionService()
+                                        # Construct full snapshot path
+                                        snapshot_full_path = settings.data_dir / snapshot_path if not Path(snapshot_path).is_absolute() else Path(snapshot_path)
+                                        
+                                        logger.info(f"[FACE RECOGNITION] Attempting to find matching user for snapshot: {snapshot_full_path}")
+                                        match_result = await face_service.find_matching_user(
+                                            violation_snapshot_path=str(snapshot_full_path),
+                                            organization_id=camera.organization_id,
+                                            db=db
+                                        )
+                                        
+                                        if match_result:
+                                            detected_user_id, face_match_confidence = match_result
+                                            logger.info(
+                                                f"[FACE MATCH] ✅ Violation matched to user {detected_user_id} "
+                                                f"with confidence {face_match_confidence:.3f}"
+                                            )
+                                        else:
+                                            logger.info("[FACE RECOGNITION] No matching user found for violation snapshot")
+                                    except ImportError as e:
+                                        # Face recognition not available, skip matching
+                                        logger.debug(f"[FACE RECOGNITION] Service not available: {str(e)}")
+                                    except Exception as e:
+                                        # Log error but continue with violation creation
+                                        logger.warning(f"[FACE RECOGNITION] Matching failed: {str(e)}", exc_info=True)
+                                else:
+                                    logger.warning(f"[FACE RECOGNITION] Camera not found or missing organization_id: camera_id={camera_id}")
+                            except Exception as e:
+                                logger.warning(f"[FACE RECOGNITION] Error during face recognition matching: {str(e)}", exc_info=True)
+                        else:
+                            logger.debug("[FACE RECOGNITION] No snapshot path available, skipping face matching")
+                        
                         # Prepare violation data
                         violation_data = schemas.ViolationCreate(
                             camera_id=camera_id,
@@ -360,7 +410,9 @@ async def detect_frame(
                             severity=mapped_severity,
                             snapshot_path=snapshot_path,
                             video_path=video_path,  # ✅ Include video path
-                            track_id=track_id
+                            track_id=track_id,
+                            detected_user_id=detected_user_id,  # ✅ Face recognition match
+                            face_match_confidence=face_match_confidence  # ✅ Match confidence
                         )
                         
                         # Create violation in database

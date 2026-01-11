@@ -30,6 +30,8 @@ pillow==10.1.0                # Image processing
 onnxruntime==1.16.3           # ONNX Runtime for optimized inference (2-3x speedup)
 huggingface-hub==0.19.4       # For downloading pretrained models (Ultralytics HUB)
 supervision==0.16.0           # Computer vision utilities (tracking, annotations)
+deepface>=0.0.96              # Face recognition library (multiple backends) - updated for TensorFlow 2.20 compatibility
+tf-keras>=2.20.0              # TensorFlow Keras compatibility layer (required for DeepFace with TF 2.20+)
 
 # ==========================================
 # UTILITIES
@@ -39,6 +41,7 @@ python-jose[cryptography]==3.3.0  # JWT tokens (future)
 passlib[bcrypt]==1.7.4        # Password hashing (future)
 bcrypt==4.0.1                # Compatible bcrypt backend for passlib
 python-dateutil==2.8.2        # Date utilities
+apscheduler==3.10.4           # Background job scheduler (email notifications)
 
 # ==========================================
 # DEVELOPMENT

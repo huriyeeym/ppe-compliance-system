@@ -26,7 +26,12 @@ export default function CustomSelect({
   disabled = false,
   className = ''
 }: CustomSelectProps) {
-  const selectedOption = options.find(opt => opt.value === value)
+  const selectedOption = options.find(opt => {
+    // Handle type conversion for comparison
+    const optValue = String(opt.value)
+    const currentValue = value === null || value === undefined ? '' : String(value)
+    return optValue === currentValue
+  })
 
   return (
     <div className={className}>

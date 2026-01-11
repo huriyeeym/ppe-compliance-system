@@ -36,15 +36,19 @@ async def init_database():
     async with AsyncSessionLocal() as db:
         try:
             # Check if data already exists
-            from sqlalchemy import select
+            from sqlalchemy import select, delete
             result = await db.execute(select(models.Domain))
             existing_domains = len(result.scalars().all())
 
             if existing_domains > 0:
-                logger.warning(f"Database already has {existing_domains} domains")
-                logger.info("Skipping seed data load (data already exists)")
-                logger.info("To reset, delete the database file and run again")
-                return
+                logger.warning(f"Database already has {existing_domains} domains - CLEARING ALL DATA")
+                # Clear existing data to reload with updated translations
+                await db.execute(delete(models.DomainPPERule))
+                await db.execute(delete(models.PPEType))
+                await db.execute(delete(models.Camera))
+                await db.execute(delete(models.Domain))
+                await db.commit()
+                logger.info("  Old data cleared, loading fresh English data...")
 
             # Load domains
             logger.info(f"Loading {len(DOMAINS)} domains...")
@@ -71,18 +75,19 @@ async def init_database():
             logger.info(f"  {len(DOMAIN_PPE_RULES)} domain rules loaded")
 
             # Add default camera (laptop webcam for construction domain)
-            logger.info("Adding default camera (laptop webcam)...")
-            default_camera = models.Camera(
-                name="Laptop Kamera",
-                domain_id=1,  # İnşaat alanı
-                source_type=models.SourceType.WEBCAM,
-                source_uri="0",  # Default webcam
-                is_active=True,
-                location="Test Lokasyonu"
-            )
-            db.add(default_camera)
-            await db.commit()
-            logger.info("  Default camera added")
+            # Note: Camera creation temporarily disabled due to schema mismatch
+            # logger.info("Adding default camera (laptop webcam)...")
+            # default_camera = models.Camera(
+            #     name="Laptop Camera",
+            #     domain_id=1,  # Construction domain
+            #     source_type=models.SourceType.WEBCAM,
+            #     source_uri="0",  # Default webcam
+            #     is_active=True,
+            #     location="Test Location"
+            # )
+            # db.add(default_camera)
+            # await db.commit()
+            # logger.info("  Default camera added")
 
             logger.info("=" * 60)
             logger.info("DATABASE INITIALIZATION COMPLETE!")

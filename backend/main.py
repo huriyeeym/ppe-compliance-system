@@ -152,7 +152,7 @@ async def root():
 # API ROUTES
 # ==========================================
 
-from backend.api import domains, cameras, violations, ppe_types, detection, auth, users, notification_settings, notification_schedules, maintenance, websocket, organizations
+from backend.api import domains, cameras, violations, ppe_types, detection, auth, users, notification_settings, notification_schedules, maintenance, websocket, organizations, files
 
 app.include_router(domains.router, prefix=settings.api_v1_prefix)
 app.include_router(ppe_types.router, prefix=settings.api_v1_prefix)
@@ -166,6 +166,7 @@ app.include_router(notification_settings.router, prefix=settings.api_v1_prefix)
 app.include_router(notification_schedules.router, prefix=settings.api_v1_prefix)
 app.include_router(maintenance.router, prefix=settings.api_v1_prefix)
 app.include_router(websocket.router, prefix=settings.api_v1_prefix)  # ✅ WebSocket endpoint
+app.include_router(files.router, prefix=settings.api_v1_prefix)  # ✅ File serving endpoint
 
 
 if __name__ == "__main__":

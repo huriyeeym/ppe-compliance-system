@@ -51,6 +51,13 @@ async def get_current_user(
     if not user.is_active:
         raise HTTPException(status_code=400, detail="Kullanıcı pasif durumda")
     
+    # Ensure organization_id is loaded (refresh if needed)
+    if user.organization_id is None:
+        # Refresh user to ensure organization_id is loaded
+        await db.refresh(user, ["organization"])
+        from backend.utils.logger import logger
+        logger.warning(f"User {user.id} has no organization_id, refreshing from database")
+    
     # Load user's domains from organization (not from user_domains table)
     # User domains are now derived from organization domains
     user_domains_list = await service.get_user_domains(user.id)

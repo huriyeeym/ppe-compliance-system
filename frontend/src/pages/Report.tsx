@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { FileDown, FileSpreadsheet, AlertTriangle, Check, Clock, X } from 'lucide-react'
+import { FileDown, FileSpreadsheet, AlertTriangle, Check, Clock, X, FileText } from 'lucide-react'
 import { violationService, type Violation, type ViolationFilters } from '../lib/api/services'
 import { domainService } from '../lib/api/services'
 import { logger } from '../lib/utils/logger'
@@ -7,6 +7,8 @@ import { exportViolationsToPDF, exportViolationsToExcel } from '../lib/utils/exp
 import { showSuccessAlert, showErrorAlert } from '../components/alerts/ViolationAlert'
 import CustomSelect from '../components/common/CustomSelect'
 import { useAuth } from '../context/AuthContext'
+import PermissionGate from '../components/common/PermissionGate'
+import ViolationDetailModal from '../components/violations/ViolationDetailModal'
 
 /**
  * Violation Reports Page
@@ -21,13 +23,104 @@ import { useAuth } from '../context/AuthContext'
  */
 export default function Report() {
   const { user } = useAuth()
-  const [dateRange, setDateRange] = useState({ from: '2025-11-01', to: '2025-11-10' })
+  
+  // Set default date range to last 30 days (to show recent violations)
+  // Use local date to avoid timezone issues
+  const getDefaultDateRange = () => {
+    const today = new Date()
+    const thirtyDaysAgo = new Date()
+    thirtyDaysAgo.setDate(today.getDate() - 30)
+    
+    // Format as YYYY-MM-DD using local date (not UTC)
+    const formatLocalDate = (date: Date): string => {
+      const year = date.getFullYear()
+      const month = String(date.getMonth() + 1).padStart(2, '0')
+      const day = String(date.getDate()).padStart(2, '0')
+      return `${year}-${month}-${day}`
+    }
+    
+    return {
+      from: formatLocalDate(thirtyDaysAgo),
+      to: formatLocalDate(today)
+    }
+  }
+  
+  const [dateRange, setDateRange] = useState(getDefaultDateRange())
   const [selectedSeverity, setSelectedSeverity] = useState<string>('all')
   const [selectedPPE, setSelectedPPE] = useState<string>('all')
-  const [selectedViolation, setSelectedViolation] = useState<number | null>(null)
+  const [selectedViolation, setSelectedViolation] = useState<Violation | null>(null)
+
+  const handleUserReassign = async (violationId: number, userId: number | null) => {
+    try {
+      await violationService.update(violationId, {
+        detected_user_id: userId,
+      })
+      // Refresh violations
+      await loadViolations()
+      showSuccessAlert('User reassigned successfully')
+    } catch (err) {
+      logger.error('Failed to reassign user', err)
+      showErrorAlert('Failed to reassign user')
+      throw err
+    }
+  }
   const [violations, setViolations] = useState<Violation[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [selectedDomainId, setSelectedDomainId] = useState<number | null>(null)
+  const [domains, setDomains] = useState<Array<{ id: number; name: string; type: string }>>([])
+  const [pagination, setPagination] = useState({ skip: 0, limit: 50 })
+  const [totalViolations, setTotalViolations] = useState(0)
+
+  // Ensure end date is always set to today when component mounts or when it's not set
+  useEffect(() => {
+    // Format today's date using local time (not UTC)
+    const today = new Date()
+    const year = today.getFullYear()
+    const month = String(today.getMonth() + 1).padStart(2, '0')
+    const day = String(today.getDate()).padStart(2, '0')
+    const todayString = `${year}-${month}-${day}`
+    
+    if (!dateRange.to || dateRange.to !== todayString) {
+      setDateRange(prev => ({
+        ...prev,
+        to: todayString
+      }))
+    }
+  }, []) // Only run once on mount
+
+  // Load organization domains on mount - only show organization's 4 domains
+  // Load organization domains on mount - only show organization's 4 domains
+  // Wait for user to be loaded before loading domains
+  useEffect(() => {
+    // Don't load domains if user is not yet loaded
+    if (!user) {
+      return
+    }
+    
+    const loadDomains = async () => {
+      try {
+        if (user?.organization_id) {
+          // Load organization-specific domains (should return only 4: Construction, Manufacturing, Mining, Warehouse)
+          const orgDomains = await domainService.getOrganizationDomains(user.organization_id)
+          logger.info(`Loaded ${orgDomains.length} organization domains`, { 
+            organization_id: user.organization_id,
+            domains: orgDomains.map(d => ({ id: d.id, name: d.name, type: d.type }))
+          })
+          const mappedDomains = orgDomains.map(d => ({ id: d.id, name: d.name, type: d.type }))
+          setDomains(mappedDomains)
+        } else {
+          // Fallback: if no organization, use active domains
+          const activeDomains = await domainService.getActive()
+          setDomains(activeDomains.map(d => ({ id: d.id, name: d.name, type: d.type })))
+        }
+      } catch (err) {
+        logger.error('Failed to load domains', err)
+        setError('Failed to load domains')
+      }
+    }
+    loadDomains()
+  }, [user, user?.organization_id])
 
   // Load violations from API
   const loadViolations = useCallback(async () => {
@@ -35,48 +128,51 @@ export default function Report() {
       setLoading(true)
       setError(null)
 
-      // Get construction domain
-      const domains = await domainService.getActive()
-      const constructionDomain = domains.find(d => d.type === 'construction')
-
-      if (!constructionDomain) {
-        setError('Construction domain not found')
-        return
-      }
-
       // Build filters
       const filters: ViolationFilters = {
-        domain_id: constructionDomain.id,
-        skip: 0,
-        limit: 50,
+        skip: pagination.skip,
+        limit: pagination.limit,
+      }
+
+      // Only add domain_id filter if a specific domain is selected (not "All")
+      if (selectedDomainId) {
+        filters.domain_id = selectedDomainId
       }
 
       if (selectedSeverity !== 'all') {
         filters.severity = selectedSeverity as 'critical' | 'high' | 'medium' | 'low'
       }
 
+      if (selectedPPE !== 'all') {
+        filters.missing_ppe_type = selectedPPE
+      }
+
       if (dateRange.from) {
         filters.start_date = new Date(dateRange.from).toISOString()
       }
       if (dateRange.to) {
-        filters.end_date = new Date(dateRange.to).toISOString()
+        // Set end date to end of day (23:59:59) to include all violations on that day
+        const endDate = new Date(dateRange.to)
+        endDate.setHours(23, 59, 59, 999)
+        filters.end_date = endDate.toISOString()
       }
 
       logger.debug('Loading violations with filters', filters)
       const response = await violationService.getAll(filters)
       setViolations(response.items)
-      logger.info(`Loaded ${response.items.length} violations`)
+      setTotalViolations(response.total)
+      logger.info(`Loaded ${response.items.length} violations (total: ${response.total})`)
     } catch (err) {
       logger.error('Failed to load violations', err)
       setError('Failed to load violation list')
     } finally {
       setLoading(false)
     }
-  }, [dateRange, selectedSeverity, selectedPPE])
+  }, [dateRange, selectedSeverity, selectedPPE, selectedDomainId])
 
   useEffect(() => {
     loadViolations()
-  }, [loadViolations])
+  }, [loadViolations, pagination.skip, pagination.limit])
 
   const getPPEDisplayName = (type: string) => {
     const names: Record<string, string> = {
@@ -149,79 +245,106 @@ export default function Report() {
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-page-title">Violation Reports</h1>
-          <p className="text-caption text-gray-500">Detailed violation records and export</p>
-        </div>
-        <div className="flex gap-3">
-          <button
-            onClick={() => {
-              try {
-                const exportData = violations.map(v => ({
-                  id: v.id,
-                  timestamp: v.timestamp,
-                  camera_name: `Camera #${v.camera_id}`,
-                  missing_ppe: v.missing_ppe.map(p => getPPEDisplayName(p.type)),
-                  severity: v.severity,
-                  status: v.status || 'pending',
-                  confidence: v.confidence,
-                  assigned_to: v.assigned_to || '-',
-                  notes: v.notes || '-',
-                  corrective_action: v.corrective_action || '-',
-                }))
-                exportViolationsToPDF(exportData, {
-                  title: 'PPE Violation Report',
-                  dateRange: { start: dateRange.from, end: dateRange.to },
-                  companyName: 'PPE Compliance System',
-                })
-                showSuccessAlert('PDF downloaded successfully')
-              } catch (err) {
-                logger.error('PDF export failed', err)
-                showErrorAlert('Error creating PDF')
-              }
-            }}
-            className="btn-danger flex items-center gap-2"
-          >
-            <FileDown className="h-4 w-4" />
-            Download PDF
-          </button>
-          <button
-            onClick={() => {
-              try {
-                const exportData = violations.map(v => ({
-                  id: v.id,
-                  timestamp: v.timestamp,
-                  camera_name: `Camera #${v.camera_id}`,
-                  missing_ppe: v.missing_ppe.map(p => getPPEDisplayName(p.type)),
-                  severity: v.severity,
-                  status: v.status || 'pending',
-                  confidence: v.confidence,
-                  assigned_to: v.assigned_to || '-',
-                  notes: v.notes || '-',
-                  corrective_action: v.corrective_action || '-',
-                }))
-                exportViolationsToExcel(exportData, {
-                  filename: `violations-${new Date().toISOString().split('T')[0]}.xlsx`,
-                  sheetName: 'Violations',
-                })
-                showSuccessAlert('Excel downloaded successfully')
-              } catch (err) {
-                logger.error('Excel export failed', err)
-                showErrorAlert('Error creating Excel')
-              }
-            }}
-            className="btn-success flex items-center gap-2"
-          >
-            <FileSpreadsheet className="h-4 w-4" />
-            Download Excel
-          </button>
+      <div className="mb-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-page-title flex items-center gap-2">
+              <FileText className="w-7 h-7 text-[#405189]" />
+              Violation Reports
+            </h1>
+            <p className="text-caption text-gray-600 mt-1">
+              Detailed violation records, filtering, and export
+            </p>
+          </div>
+          <PermissionGate roles={['super_admin', 'admin', 'manager']}>
+          <div className="flex gap-3">
+            <button
+              onClick={() => {
+                try {
+                  const exportData = violations.map(v => ({
+                    id: v.id,
+                    timestamp: v.timestamp,
+                    camera_name: `Camera #${v.camera_id}`,
+                    missing_ppe: v.missing_ppe.map(p => getPPEDisplayName(p.type)),
+                    severity: v.severity,
+                    status: v.status || 'pending',
+                    confidence: v.confidence,
+                    assigned_to: v.assigned_to || '-',
+                    notes: v.notes || '-',
+                    corrective_action: v.corrective_action || '-',
+                  }))
+                  exportViolationsToPDF(exportData, {
+                    title: 'PPE Violation Report',
+                    dateRange: { start: dateRange.from, end: dateRange.to },
+                    companyName: 'PPE Compliance System',
+                  })
+                  showSuccessAlert('PDF downloaded successfully')
+                } catch (err) {
+                  logger.error('PDF export failed', err)
+                  showErrorAlert('Error creating PDF')
+                }
+              }}
+              className="btn-danger flex items-center gap-2"
+            >
+              <FileDown className="h-4 w-4" />
+              Download PDF
+            </button>
+            <button
+              onClick={() => {
+                try {
+                  const exportData = violations.map(v => ({
+                    id: v.id,
+                    timestamp: v.timestamp,
+                    camera_name: `Camera #${v.camera_id}`,
+                    missing_ppe: v.missing_ppe.map(p => getPPEDisplayName(p.type)),
+                    severity: v.severity,
+                    status: v.status || 'pending',
+                    confidence: v.confidence,
+                    assigned_to: v.assigned_to || '-',
+                    notes: v.notes || '-',
+                    corrective_action: v.corrective_action || '-',
+                  }))
+                  exportViolationsToExcel(exportData, {
+                    filename: `violations-${new Date().toISOString().split('T')[0]}.xlsx`,
+                    sheetName: 'Violations',
+                  })
+                  showSuccessAlert('Excel downloaded successfully')
+                } catch (err) {
+                  logger.error('Excel export failed', err)
+                  showErrorAlert('Error creating Excel')
+                }
+              }}
+              className="btn-success flex items-center gap-2"
+            >
+              <FileSpreadsheet className="h-4 w-4" />
+              Download Excel
+            </button>
+          </div>
+        </PermissionGate>
         </div>
       </div>
 
       {/* Filters */}
       <div className="card">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Domain</label>
+            <CustomSelect
+              value={selectedDomainId?.toString() || 'all'}
+              onChange={(val) => {
+                try {
+                  setSelectedDomainId(val === 'all' || val === '' ? null : Number(val))
+                } catch (err) {
+                  logger.error('Error changing domain', err)
+                  setError('Failed to change domain')
+                }
+              }}
+              options={[
+                { value: 'all', label: 'All Domains' },
+                ...domains.map(d => ({ value: d.id.toString(), label: d.name }))
+              ]}
+            />
+          </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
             <input
@@ -236,6 +359,7 @@ export default function Report() {
             <input
               type="date"
               value={dateRange.to}
+              max={new Date().toISOString().split('T')[0]} // Prevent selecting future dates
               onChange={(e) => setDateRange({ ...dateRange, to: e.target.value })}
               className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#405189]/20 focus:border-[#405189] transition-all"
             />
@@ -294,10 +418,9 @@ export default function Report() {
                   <tr
                     key={violation.id}
                     className={`
-                      hover:bg-gray-50 transition-colors cursor-pointer
+                      hover:bg-gray-50 transition-colors
                       ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}
                     `}
-                    onClick={() => setSelectedViolation(violation.id)}
                   >
                     <td className="px-6 py-4 text-body">{formatDateTime(violation.timestamp)}</td>
                     <td className="px-6 py-4 text-body">Camera #{violation.camera_id}</td>
@@ -346,10 +469,7 @@ export default function Report() {
                     <td className="px-6 py-4">
                       <button
                         className="px-4 py-1.5 bg-[#405189]/10 text-[#405189] rounded-md text-xs font-medium hover:bg-[#405189]/20 transition-all"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setSelectedViolation(violation.id)
-                        }}
+                        onClick={() => setSelectedViolation(violation)}
                       >
                         Detail
                       </button>
@@ -360,80 +480,41 @@ export default function Report() {
             </tbody>
           </table>
         </div>
+        
+        {/* Pagination */}
+        {totalViolations > pagination.limit && (
+          <div className="bg-gray-50 border-t border-gray-200 px-4 py-3 flex items-center justify-between">
+            <div className="text-sm text-gray-600">
+              Showing {pagination.skip + 1} to {Math.min(pagination.skip + pagination.limit, totalViolations)} of {totalViolations}
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setPagination({ ...pagination, skip: Math.max(0, pagination.skip - pagination.limit) })}
+                disabled={pagination.skip === 0}
+                className="px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Previous
+              </button>
+              <button
+                onClick={() => setPagination({ ...pagination, skip: pagination.skip + pagination.limit })}
+                disabled={pagination.skip + pagination.limit >= totalViolations}
+                className="px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Violation Detail Modal */}
-      {selectedViolation && violations.find(v => v.id === selectedViolation) && (() => {
-        const violation = violations.find(v => v.id === selectedViolation)!
-        return (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-lg shadow-xl p-6 max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-              <div className="flex items-center justify-between mb-4 pb-4 border-b border-gray-200">
-                <h3 className="text-section-title">Violation Details</h3>
-                <button
-                  onClick={() => setSelectedViolation(null)}
-                  className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              <div className="space-y-4">
-                {/* Frame Snapshot */}
-                {violation.frame_snapshot && (
-                  <div>
-                    <h4 className="text-sm font-medium text-gray-700 mb-2">Violation Snapshot</h4>
-                    <img
-                      src={violation.frame_snapshot}
-                      alt="Violation snapshot"
-                      className="w-full rounded-lg border border-gray-200"
-                    />
-                  </div>
-                )}
-
-                {/* Violation Details */}
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <p className="text-caption text-gray-500 mb-1">Time</p>
-                    <p className="text-body text-gray-900">{formatDateTime(violation.timestamp)}</p>
-                  </div>
-                  <div>
-                    <p className="text-caption text-gray-500 mb-1">Camera</p>
-                    <p className="text-body text-gray-900">Camera #{violation.camera_id}</p>
-                  </div>
-                  <div>
-                    <p className="text-caption text-gray-500 mb-1">Missing PPE</p>
-                    <div className="flex flex-wrap gap-1">
-                      {violation.missing_ppe.map((ppe, idx) => (
-                        <span key={idx} className="px-2 py-1 bg-[#F06548]/10 text-[#F06548] rounded-md text-xs font-medium">
-                          {getPPEDisplayName(ppe.type)}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                  <div>
-                    <p className="text-caption text-gray-500 mb-1">Confidence</p>
-                    <p className="text-body text-gray-900">{(violation.confidence * 100).toFixed(1)}%</p>
-                  </div>
-                </div>
-
-                {/* Actions */}
-                {!violation.acknowledged && (
-                  <div className="pt-4 border-t border-gray-200">
-                    <button
-                      className="btn-success flex items-center gap-2"
-                      onClick={() => handleAcknowledge(violation.id)}
-                    >
-                      <Check className="w-4 h-4" />
-                      <span>Acknowledge</span>
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        )
-      })()}
+      {selectedViolation && (
+        <ViolationDetailModal
+          violation={selectedViolation}
+          onClose={() => setSelectedViolation(null)}
+          onUserReassign={handleUserReassign}
+        />
+      )}
     </div>
   )
 }

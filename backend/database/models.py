@@ -240,6 +240,10 @@ class Violation(Base):
     #   - 1800 seconds (30 min) = serious violation
     #   - 7200 seconds (2 hours) = CRITICAL, prolonged unsafe work
 
+    # Face Recognition (for user identification)
+    detected_user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)  # Matched user
+    face_match_confidence = Column(Float, nullable=True)  # Match confidence (0.0-1.0)
+
     # Workflow & Management
     status = Column(SQLEnum(ViolationStatus, native_enum=False), default=ViolationStatus.OPEN, index=True)
     assigned_to = Column(String(100), nullable=True)         # User email/username
@@ -257,6 +261,7 @@ class Violation(Base):
     organization = relationship("Organization", back_populates="violations")
     camera = relationship("Camera", back_populates="violations")
     domain = relationship("Domain", back_populates="violations")
+    detected_user = relationship("User", foreign_keys=[detected_user_id])
     
     def __repr__(self):
         return f"<Violation(id={self.id}, camera_id={self.camera_id}, timestamp='{self.timestamp}')>"
@@ -319,6 +324,29 @@ class User(Base):
 
     def __repr__(self):
         return f"<User(id={self.id}, email='{self.email}', role='{self.role}')>"
+
+
+class UserPhoto(Base):
+    """
+    User reference photos for face recognition
+    Stores multiple photos per user to improve matching accuracy
+    """
+    __tablename__ = "user_photos"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    photo_path = Column(String(300), nullable=False)  # Path to stored photo
+    face_encoding = Column(JSON, nullable=True)  # Face encoding vector (stored as JSON array)
+    is_primary = Column(Boolean, default=False)  # Primary reference photo
+    uploaded_at = Column(DateTime, default=datetime.utcnow)
+    uploaded_by = Column(Integer, ForeignKey("users.id"), nullable=True)  # Admin who uploaded
+    
+    # Relationships
+    user = relationship("User", foreign_keys=[user_id], backref="photos")
+    uploader = relationship("User", foreign_keys=[uploaded_by])
+    
+    def __repr__(self):
+        return f"<UserPhoto(id={self.id}, user_id={self.user_id}, is_primary={self.is_primary})>"
 
 
 class NotificationSettings(Base):

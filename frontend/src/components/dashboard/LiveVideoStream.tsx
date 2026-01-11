@@ -5,7 +5,10 @@ import { logger } from '../../lib/utils/logger'
 interface LiveVideoStreamProps {
   cameraId: number
   isStreaming: boolean
-  domainId: string
+  domainId: string  // Domain type (e.g., 'construction')
+  domainIdNumber?: number  // Domain ID number (optional, for violation recording)
+  cameraSourceUri?: string  // Camera source URI (e.g., "0", "1", "rtsp://...")
+  cameraSourceType?: string  // Camera source type (e.g., "webcam", "rtsp", "file")
   onDetectionComplete?: (result: DetectionResult) => void
 }
 
@@ -57,14 +60,17 @@ export default function LiveVideoStream({
   cameraId,
   isStreaming,
   domainId,
+  domainIdNumber,
+  cameraSourceUri,
+  cameraSourceType,
   onDetectionComplete
 }: LiveVideoStreamProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [detections, setDetections] = useState<Detection[]>([])
   const [fps, setFps] = useState(0)
-  const [detectionFps, setDetectionFps] = useState(0)
   const detectionCanvasRef = useRef<HTMLCanvasElement | null>(null)
+  const [videoSize, setVideoSize] = useState<{ width: number; height: number } | null>(null)
 
   // Start webcam stream
   useEffect(() => {
@@ -78,15 +84,114 @@ export default function LiveVideoStream({
       return
     }
 
-    navigator.mediaDevices.getUserMedia({ video: true })
-      .then((stream) => {
+    // RTSP veya file source ise, backend'den stream al (şimdilik sadece webcam destekliyoruz)
+    if (cameraSourceType === 'rtsp' || cameraSourceType === 'file') {
+      logger.warn('RTSP and file sources are not yet supported in frontend. Please use webcam source.')
+      return
+    }
+
+    // Webcam için: source_uri'yi kullan (e.g., "0", "1", "2")
+    const startCamera = async () => {
+      try {
+        let constraints: MediaStreamConstraints = { video: true }
+        
+        // Eğer source_uri belirtilmişse, o kamerayı seç
+        if (cameraSourceUri && cameraSourceType === 'webcam') {
+          try {
+            // Tüm kameraları listele
+            const devices = await navigator.mediaDevices.enumerateDevices()
+            const videoDevices = devices.filter(device => device.kind === 'videoinput')
+            
+            logger.info(`Found ${videoDevices.length} video devices`)
+            videoDevices.forEach((d, i) => {
+              logger.info(`  [${i}] ${d.label || 'Unknown'} (deviceId: ${d.deviceId.substring(0, 20)}...)`)
+            })
+            
+            // Önce OBS Virtual Camera'yı label'a göre bul (eğer varsa)
+            let selectedDevice = null
+            const obsCamera = videoDevices.find(device => {
+              const label = (device.label || '').toLowerCase()
+              return label.includes('obs') || label.includes('virtual') || label.includes('droidcam')
+            })
+            
+            if (obsCamera) {
+              selectedDevice = obsCamera
+              logger.info(`✅ Found OBS/Virtual Camera: ${obsCamera.label || 'Unknown'}`)
+            } else {
+              // OBS bulunamazsa, source_uri'ye göre index kullan
+              const cameraIndex = parseInt(cameraSourceUri, 10)
+              if (!isNaN(cameraIndex) && videoDevices[cameraIndex]) {
+                selectedDevice = videoDevices[cameraIndex]
+                logger.info(`✅ Selecting camera at index ${cameraIndex}: ${selectedDevice.label || 'Unknown'}`)
+              } else if (!isNaN(cameraIndex)) {
+                logger.warn(`⚠️ Camera index ${cameraIndex} not found (total: ${videoDevices.length}), trying all cameras...`)
+                // Tüm kameraları sırayla dene
+                for (let i = 0; i < videoDevices.length; i++) {
+                  try {
+                    const testConstraints = {
+                      video: { deviceId: { exact: videoDevices[i].deviceId } }
+                    }
+                    const testStream = await navigator.mediaDevices.getUserMedia(testConstraints)
+                    testStream.getTracks().forEach(track => track.stop())
+                    selectedDevice = videoDevices[i]
+                    logger.info(`✅ Found working camera at index ${i}: ${selectedDevice.label || 'Unknown'}`)
+                    break
+                  } catch (testErr) {
+                    logger.debug(`Camera ${i} not available: ${testErr}`)
+                  }
+                }
+              }
+            }
+            
+            if (selectedDevice) {
+              constraints = {
+                video: {
+                  deviceId: { exact: selectedDevice.deviceId }
+                }
+              }
+            } else {
+              logger.warn('No suitable camera found, using default')
+            }
+          } catch (enumErr) {
+            logger.warn('Could not enumerate devices, using default camera', enumErr)
+          }
+        }
+        
+        // Kamera stream'ini başlat
+        const stream = await navigator.mediaDevices.getUserMedia(constraints)
+        
         if (videoRef.current) {
           videoRef.current.srcObject = stream
+          // Video boyutunu al
+          videoRef.current.onloadedmetadata = () => {
+            if (videoRef.current) {
+              setVideoSize({
+                width: videoRef.current.videoWidth,
+                height: videoRef.current.videoHeight
+              })
+              logger.info(`Video stream started: ${videoRef.current.videoWidth}x${videoRef.current.videoHeight}`)
+            }
+          }
         }
-      })
-      .catch((err) => {
+      } catch (err: any) {
         logger.error('Webcam access error', err)
-      })
+        
+        // Eğer belirli kamera bulunamazsa ve source_uri varsa, default kamerayı dene
+        if (cameraSourceUri && err.name !== 'NotAllowedError') {
+          logger.info('Trying default camera as fallback...')
+          try {
+            const fallbackStream = await navigator.mediaDevices.getUserMedia({ video: true })
+            if (videoRef.current) {
+              videoRef.current.srcObject = fallbackStream
+            }
+          } catch (fallbackErr) {
+            logger.error('Fallback camera also failed', fallbackErr)
+          }
+        }
+      }
+    }
+
+    startCamera()
 
     return () => {
       if (videoRef.current?.srcObject) {
@@ -94,18 +199,33 @@ export default function LiveVideoStream({
         stream.getTracks().forEach(track => track.stop())
       }
     }
-  }, [isStreaming])
+  }, [isStreaming, cameraSourceUri, cameraSourceType])
+
+  // Store onDetectionComplete in ref to avoid recreating interval
+  const onDetectionCompleteRef = useRef(onDetectionComplete)
+  useEffect(() => {
+    onDetectionCompleteRef.current = onDetectionComplete
+  }, [onDetectionComplete])
 
   // Detection results via backend API
   useEffect(() => {
     if (!isStreaming) {
       setDetections([])
+      // Canvas'ı temizle
+      if (canvasRef.current) {
+        const canvas = canvasRef.current
+        const ctx = canvas.getContext('2d')
+        if (ctx) {
+          ctx.clearRect(0, 0, canvas.width, canvas.height)
+        }
+      }
       return
     }
 
     let isMounted = true
     let detecting = false
-    let lastDetectionTime = performance.now()
+    let detectionCount = 0
+    let detectionStartTime = performance.now()
 
     const runDetection = async () => {
       if (!videoRef.current) {
@@ -142,7 +262,11 @@ export default function LiveVideoStream({
           return
         }
         try {
-          const result = await detectionService.detectFrame(blob)
+          const result = await detectionService.detectFrame(blob, {
+            confidence: 0.5,
+            camera_id: cameraId,
+            domain_id: domainIdNumber  // Domain ID number for violation recording
+          })
           console.log('[LiveVideoStream] API Response received:', result)
           if (!isMounted) return
 
@@ -176,13 +300,18 @@ export default function LiveVideoStream({
           })
 
           setDetections(mappedDetections)
-          const now = performance.now()
-          const elapsed = now - lastDetectionTime
-          setDetectionFps(Math.round(1000 / Math.max(elapsed, 1)))
-          lastDetectionTime = now
+          detectionCount++
+          
+          // Detection FPS'i hesapla (0.5 saniyede bir reset)
+          const totalElapsed = (performance.now() - detectionStartTime) / 1000
+          if (totalElapsed >= 0.5) {
+            detectionCount = 0
+            detectionStartTime = performance.now()
+          }
 
           // ✅ Pass full backend response to parent (includes smart recording decisions)
-          if (onDetectionComplete) {
+          const callback = onDetectionCompleteRef.current
+          if (callback) {
             console.log('[LiveVideoStream] About to call onDetectionComplete with:', {
               detections_count: mappedDetections.length,
               violations_recorded_count: result.violations_recorded?.length || 0,
@@ -195,7 +324,7 @@ export default function LiveVideoStream({
             }
 
             try {
-              onDetectionComplete({
+              callback({
                 detections: mappedDetections,
                 violations_recorded: result.violations_recorded || [],
                 recording_stats: result.recording_stats || {
@@ -209,8 +338,6 @@ export default function LiveVideoStream({
             } catch (callbackErr) {
               console.error('[LiveVideoStream] Error in onDetectionComplete callback:', callbackErr)
             }
-          } else {
-            console.warn('[LiveVideoStream] onDetectionComplete callback is not defined!')
           }
         } catch (err) {
           console.error('[LiveVideoStream] Detection failed:', err)
@@ -221,113 +348,199 @@ export default function LiveVideoStream({
       }, 'image/jpeg', 0.7)
     }
 
-    const interval = setInterval(runDetection, 800)
+    // Detection interval'i optimize et - daha hızlı detection için
+    const interval = setInterval(runDetection, 500) // 800ms'den 500ms'ye düşürdük (2 FPS teorik max)
 
     return () => {
       isMounted = false
       clearInterval(interval)
     }
-  }, [isStreaming, cameraId, domainId, onDetectionComplete])
+  }, [isStreaming, cameraId, domainId]) // Remove onDetectionComplete from dependencies
 
-  // Video FPS hesapla
+  // Video FPS hesapla - video stream'inin gerçek frame rate'ini ölç
   useEffect(() => {
-    if (!isStreaming || !videoRef.current) return
-
-    let frameCount = 0
-    const startTime = Date.now()
-
-    const countFps = () => {
-      frameCount++
-      const elapsed = (Date.now() - startTime) / 1000
-      if (elapsed >= 1) {
-        setFps(Math.floor(frameCount / elapsed))
-        frameCount = 0
-      }
-      requestAnimationFrame(countFps)
+    if (!isStreaming || !videoRef.current) {
+      setFps(0)
+      return
     }
 
-    countFps()
+    const video = videoRef.current
+    let frameCount = 0
+    let lastTime = performance.now()
+    let animationFrameId: number | null = null
+
+    // Video stream'den frame rate bilgisini al
+    const getVideoFrameRate = () => {
+      if (video.srcObject) {
+        const stream = video.srcObject as MediaStream
+        const videoTrack = stream.getVideoTracks()[0]
+        if (videoTrack && 'getSettings' in videoTrack) {
+          const settings = videoTrack.getSettings()
+          if (settings.frameRate) {
+            return Math.round(settings.frameRate)
+          }
+        }
+        // getCapabilities'dan da deneyelim
+        if ('getCapabilities' in videoTrack) {
+          const capabilities = videoTrack.getCapabilities()
+          if (capabilities.frameRate) {
+            const frameRate = typeof capabilities.frameRate === 'object' 
+              ? capabilities.frameRate.max || capabilities.frameRate.min || 30
+              : capabilities.frameRate
+            return Math.round(frameRate)
+          }
+        }
+      }
+      return null
+    }
+
+    // Önce stream'den frame rate'i almayı dene
+    const streamFrameRate = getVideoFrameRate()
+    if (streamFrameRate) {
+      setFps(streamFrameRate)
+    } else {
+      // Fallback: requestAnimationFrame ile video frame'lerini say
+      const countFps = () => {
+        if (video.readyState >= 2 && video.videoWidth > 0) {
+          frameCount++
+          const now = performance.now()
+          const elapsed = (now - lastTime) / 1000
+          if (elapsed >= 1) {
+            setFps(Math.round(frameCount / elapsed))
+            frameCount = 0
+            lastTime = now
+          }
+        }
+        animationFrameId = requestAnimationFrame(countFps)
+      }
+      animationFrameId = requestAnimationFrame(countFps)
+    }
+
+    return () => {
+      if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId)
+      }
+    }
   }, [isStreaming])
 
   // Canvas overlay çiz
   useEffect(() => {
-    if (!canvasRef.current || !videoRef.current) return
+    if (!canvasRef.current) return
+    
+    // Stream durduğunda canvas'ı temizle
+    if (!isStreaming || !videoRef.current) {
+      const canvas = canvasRef.current
+      const ctx = canvas.getContext('2d')
+      if (ctx) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height)
+      }
+      return
+    }
 
     const canvas = canvasRef.current
     const ctx = canvas.getContext('2d')
     if (!ctx) return
 
     const draw = () => {
-      // Canvas boyutunu video'ya göre ayarla
-      if (videoRef.current) {
-        const video = videoRef.current
-        if (video.videoWidth && video.videoHeight) {
-          canvas.width = video.videoWidth
-          canvas.height = video.videoHeight
-        }
+      if (!videoRef.current || !canvasRef.current) return
+      
+      const video = videoRef.current
+      const canvas = canvasRef.current
+      
+      // Video boyutlarını al
+      const videoWidth = video.videoWidth || 0
+      const videoHeight = video.videoHeight || 0
+      
+      if (!videoWidth || !videoHeight) {
+        requestAnimationFrame(draw)
+        return
       }
+
+      // Canvas internal resolution'ı video ile eşleştir
+      canvas.width = videoWidth
+      canvas.height = videoHeight
 
       // Clear
       ctx.clearRect(0, 0, canvas.width, canvas.height)
 
-      // Detection overlay çiz
+      // Detection overlay çiz - video sınırları içinde kalacak şekilde
       detections.forEach((det) => {
         const { bbox, ppe_status, compliance } = det
+
+        // Bbox'ın video sınırları içinde olduğundan emin ol
+        const clampedX = Math.max(0, Math.min(bbox.x, videoWidth - 1))
+        const clampedY = Math.max(0, Math.min(bbox.y, videoHeight - 1))
+        const clampedW = Math.min(bbox.w, videoWidth - clampedX)
+        const clampedH = Math.min(bbox.h, videoHeight - clampedY)
 
         // Person bounding box
         ctx.strokeStyle = compliance ? '#10B981' : '#EF4444'
         ctx.lineWidth = 3
-        ctx.strokeRect(bbox.x, bbox.y, bbox.w, bbox.h)
+        ctx.strokeRect(clampedX, clampedY, clampedW, clampedH)
 
         // PPE status badges - For construction: Hard Hat and Safety Vest
-        const badgeY = bbox.y - 35
-        let badgeX = bbox.x
+        // Badge'leri video sınırları içinde tut
+        const badgeHeight = 25
+        const badgeY = Math.max(0, clampedY - badgeHeight - 5)
+        let badgeX = clampedX
 
         // Hard hat status
-        if (ppe_status.hard_hat.detected) {
-          ctx.fillStyle = '#10B981'
-          ctx.fillRect(badgeX, badgeY, 70, 25)
-          ctx.fillStyle = '#FFFFFF'
-          ctx.font = 'bold 12px sans-serif'
-          ctx.fillText('✓ Hard Hat', badgeX + 5, badgeY + 17)
-          badgeX += 75
-        } else {
-          ctx.fillStyle = '#EF4444'
-          ctx.fillRect(badgeX, badgeY, 70, 25)
-          ctx.fillStyle = '#FFFFFF'
-          ctx.font = 'bold 12px sans-serif'
-          ctx.fillText('✗ Hard Hat', badgeX + 5, badgeY + 17)
-          badgeX += 75
+        const hardHatWidth = 70
+        if (badgeX + hardHatWidth <= videoWidth) {
+          if (ppe_status.hard_hat.detected) {
+            ctx.fillStyle = '#10B981'
+            ctx.fillRect(badgeX, badgeY, hardHatWidth, badgeHeight)
+            ctx.fillStyle = '#FFFFFF'
+            ctx.font = 'bold 12px sans-serif'
+            ctx.fillText('✓ Hard Hat', badgeX + 5, badgeY + 17)
+            badgeX += hardHatWidth + 5
+          } else {
+            ctx.fillStyle = '#EF4444'
+            ctx.fillRect(badgeX, badgeY, hardHatWidth, badgeHeight)
+            ctx.fillStyle = '#FFFFFF'
+            ctx.font = 'bold 12px sans-serif'
+            ctx.fillText('✗ Hard Hat', badgeX + 5, badgeY + 17)
+            badgeX += hardHatWidth + 5
+          }
         }
 
-        // Yelek durumu
-        if (ppe_status.safety_vest.detected) {
-          ctx.fillStyle = '#10B981'
-          ctx.fillRect(badgeX, badgeY, 70, 25)
-          ctx.fillStyle = '#FFFFFF'
-          ctx.font = 'bold 12px sans-serif'
-          ctx.fillText('✓ Safety Vest', badgeX + 5, badgeY + 17)
-        } else {
-          ctx.fillStyle = '#EF4444'
-          ctx.fillRect(badgeX, badgeY, 70, 25)
-          ctx.fillStyle = '#FFFFFF'
-          ctx.font = 'bold 12px sans-serif'
-          ctx.fillText('✗ Safety Vest', badgeX + 5, badgeY + 17)
+        // Safety vest status - sadece video sınırları içindeyse çiz
+        const vestWidth = 80
+        if (badgeX + vestWidth <= videoWidth && badgeY >= 0) {
+          if (ppe_status.safety_vest.detected) {
+            ctx.fillStyle = '#10B981'
+            ctx.fillRect(badgeX, badgeY, vestWidth, badgeHeight)
+            ctx.fillStyle = '#FFFFFF'
+            ctx.font = 'bold 12px sans-serif'
+            ctx.fillText('✓ Safety Vest', badgeX + 5, badgeY + 17)
+          } else {
+            ctx.fillStyle = '#EF4444'
+            ctx.fillRect(badgeX, badgeY, vestWidth, badgeHeight)
+            ctx.fillStyle = '#FFFFFF'
+            ctx.font = 'bold 12px sans-serif'
+            ctx.fillText('✗ Safety Vest', badgeX + 5, badgeY + 17)
+          }
         }
 
-        // Person ID
-        ctx.fillStyle = '#000000'
-        ctx.fillRect(bbox.x, bbox.y - 20, 30, 20)
-        ctx.fillStyle = '#FFFFFF'
-        ctx.font = 'bold 12px sans-serif'
-        ctx.fillText(`#${det.person_id}`, bbox.x + 5, bbox.y - 5)
+        // Person ID - video sınırları içinde
+        const idWidth = 30
+        const idHeight = 20
+        const idX = clampedX
+        const idY = Math.max(0, clampedY - idHeight)
+        if (idX + idWidth <= videoWidth && idY >= 0) {
+          ctx.fillStyle = '#000000'
+          ctx.fillRect(idX, idY, idWidth, idHeight)
+          ctx.fillStyle = '#FFFFFF'
+          ctx.font = 'bold 12px sans-serif'
+          ctx.fillText(`#${det.person_id}`, idX + 5, idY + 15)
+        }
       })
 
       requestAnimationFrame(draw)
     }
 
     draw()
-  }, [detections])
+  }, [detections, isStreaming])
 
   return (
     <div className="card">
@@ -335,7 +548,7 @@ export default function LiveVideoStream({
         <div>
           <h3 className="text-section-title">Live Video Stream</h3>
           <p className="text-caption text-slate-500 mt-1">
-            {isStreaming ? `Video: ${fps} FPS • Detection: ${detectionFps} FPS` : 'Stopped'}
+            {isStreaming ? `Video: ${fps} FPS` : 'Stopped'}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -347,23 +560,39 @@ export default function LiveVideoStream({
       </div>
 
       {/* Video Container */}
-      <div className="relative bg-slate-950 rounded-lg overflow-hidden border border-slate-700">
+      <div 
+        className="relative bg-transparent rounded-lg overflow-hidden border-0 inline-block"
+        style={{
+          maxWidth: videoSize ? `${Math.min(videoSize.width, window.innerWidth * 0.9)}px` : '100%',
+          maxHeight: videoSize ? `${Math.min(videoSize.height, window.innerHeight * 0.7)}px` : '70vh'
+        }}
+      >
         <video
           ref={videoRef}
           autoPlay
           playsInline
           muted
-          className="w-full h-auto"
-          style={{ display: isStreaming ? 'block' : 'none' }}
+          className="block max-h-[70vh] max-w-full h-auto w-auto rounded-lg"
+          style={{ 
+            display: isStreaming ? 'block' : 'none',
+            maxWidth: '100%'
+          }}
         />
         <canvas
           ref={canvasRef}
-          className="absolute top-0 left-0 w-full h-full pointer-events-none"
+          className="absolute top-0 left-0 pointer-events-none rounded-lg"
+          style={{ 
+            width: '100%',
+            height: '100%',
+            maxWidth: '100%',
+            maxHeight: '100%',
+            objectFit: 'contain'
+          }}
         />
         
         {/* Placeholder - Stream kapalıyken */}
         {!isStreaming && (
-          <div className="aspect-video flex items-center justify-center">
+          <div className="aspect-video flex items-center justify-center w-full min-h-[400px] max-h-[70vh]">
             <div className="text-center">
               <div className="text-6xl mb-4 opacity-30">📹</div>
               <p className="text-body text-slate-500">Video stream not started</p>

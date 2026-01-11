@@ -20,6 +20,8 @@ export interface Domain {
   description: string
   status: 'active' | 'planned'
   created_at: string
+  model_status?: string
+  model_last_updated?: string | null
 }
 
 /**
@@ -127,6 +129,37 @@ export class DomainService {
    */
   async createRule(domainId: number, payload: Omit<DomainRule, 'id' | 'created_at'>): Promise<DomainRule> {
     return httpClient.post<DomainRule>(`${this.basePath}/${domainId}/rules`, payload)
+  }
+
+  /**
+   * Get all domains for an organization
+   */
+  async getOrganizationDomains(organizationId: number): Promise<Domain[]> {
+    return httpClient.get<Domain[]>(`/organizations/${organizationId}/domains`)
+  }
+
+  /**
+   * Add a domain to an organization
+   */
+  async addDomainToOrganization(organizationId: number, domainId: number): Promise<void> {
+    return httpClient.post<void>(`/organizations/${organizationId}/domains/${domainId}`)
+  }
+
+  /**
+   * Remove a domain from an organization
+   */
+  async removeDomainFromOrganization(organizationId: number, domainId: number): Promise<void> {
+    return httpClient.delete<void>(`/organizations/${organizationId}/domains/${domainId}`)
+  }
+
+  /**
+   * Migrate user_domains to organization_domains
+   * Collects all domains selected by users in the organization and adds them to organization_domains
+   */
+  async migrateUserDomainsToOrganization(organizationId: number): Promise<{ message: string; domains_added: number }> {
+    return httpClient.post<{ message: string; domains_added: number }>(
+      `/organizations/${organizationId}/domains/migrate`
+    )
   }
 }
 

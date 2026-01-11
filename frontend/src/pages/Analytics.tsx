@@ -12,6 +12,7 @@
  */
 
 import { useState, useEffect, useMemo } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { 
   TrendingUp, 
   TrendingDown, 
@@ -28,6 +29,8 @@ import {
   Camera as CameraIcon
 } from 'lucide-react'
 import { useDomain } from '../context/DomainContext'
+import { useAuth } from '../context/AuthContext'
+import { canAccessPage, type UserRole } from '../lib/utils/permissions'
 import { violationService, type ViolationStatistics, type Violation } from '../lib/api/services'
 import { cameraService, type Camera } from '../lib/api/services'
 import { logger } from '../lib/utils/logger'
@@ -36,6 +39,7 @@ import ComplianceGauge from '../components/dashboard/ComplianceGauge'
 import HourlyHeatmap from '../components/dashboard/HourlyHeatmap'
 import CustomSelect from '../components/common/CustomSelect'
 import KPICard from '../components/dashboard/KPICard'
+import PermissionGate from '../components/common/PermissionGate'
 
 interface TrendData {
   date: string
@@ -60,6 +64,8 @@ interface CameraPerformance {
 }
 
 export default function Analytics() {
+  const { user } = useAuth()
+  const navigate = useNavigate()
   const { selectedDomain } = useDomain()
   const [dateRange, setDateRange] = useState<'7d' | '30d' | '90d' | 'custom'>('30d')
   const [loading, setLoading] = useState(true)
@@ -68,6 +74,13 @@ export default function Analytics() {
   const [stats, setStats] = useState<ViolationStatistics | null>(null)
   const [cameras, setCameras] = useState<Camera[]>([])
   const [previousPeriodStats, setPreviousPeriodStats] = useState<ViolationStatistics | null>(null)
+
+  // Check access on mount
+  useEffect(() => {
+    if (user && !canAccessPage(user.role as UserRole, 'analytics')) {
+      navigate('/')
+    }
+  }, [user, navigate])
 
   // Calculate date ranges
   const dateRanges = useMemo(() => {
@@ -355,14 +368,18 @@ export default function Analytics() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-page-title">Analytics</h1>
-          <p className="text-caption text-gray-600 mt-1">
-            Comprehensive insights and trends for {selectedDomain.name}
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
+      <div className="mb-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-page-title flex items-center gap-2">
+              <BarChart3 className="w-7 h-7 text-[#405189]" />
+              Analytics
+            </h1>
+            <p className="text-caption text-gray-600 mt-1">
+              Comprehensive insights, trends, and compliance analytics
+            </p>
+          </div>
+          <div className="flex items-center gap-3">
           <CustomSelect
             value={dateRange}
             onChange={(val) => setDateRange(val as '7d' | '30d' | '90d' | 'custom')}
@@ -372,10 +389,13 @@ export default function Analytics() {
               { value: '90d', label: 'Last 90 days' },
             ]}
           />
-          <button className="btn-secondary flex items-center gap-2">
-            <Download className="w-4 h-4" />
-            Export
-          </button>
+          <PermissionGate roles={['super_admin', 'admin', 'manager']}>
+            <button className="btn-secondary flex items-center gap-2">
+              <Download className="w-4 h-4" />
+              Export
+            </button>
+          </PermissionGate>
+          </div>
         </div>
       </div>
 

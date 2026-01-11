@@ -34,6 +34,9 @@ export interface Violation {
   acknowledged_by?: string
   acknowledged_at?: string
   created_at: string
+  detected_user_id?: number | null
+  detected_user?: { id: number; full_name: string; email: string } | null
+  face_match_confidence?: number | null
 }
 
 /**
@@ -84,6 +87,7 @@ export interface ViolationCreatePayload {
  * Violation Update Payload
  */
 export interface ViolationUpdatePayload {
+  detected_user_id?: number | null
   status?: 'open' | 'in_progress' | 'closed' | 'false_positive'
   assigned_to?: string
   notes?: string

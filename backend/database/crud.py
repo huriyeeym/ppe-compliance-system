@@ -3,7 +3,7 @@ CRUD (Create, Read, Update, Delete) operations for database models
 """
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_
+from sqlalchemy import select, func, and_, update, delete
 from sqlalchemy.orm import selectinload
 from typing import List, Optional
 from datetime import datetime
@@ -646,21 +646,56 @@ async def get_user_by_email(db: AsyncSession, email: str) -> Optional[User]:
 
 
 async def get_user(db: AsyncSession, user_id: int) -> Optional[User]:
-    """Get user by ID with domains loaded"""
+    """Get user by ID with domains and organization loaded"""
     result = await db.execute(
         select(User)
         .where(User.id == user_id)
-        .options(selectinload(User.domains))
+        .options(selectinload(User.domains), selectinload(User.organization))
     )
     return result.scalar_one_or_none()
 
 
-async def get_users(db: AsyncSession, skip: int = 0, limit: int = 100) -> List[User]:
-    """List users"""
-    result = await db.execute(
-        select(User).offset(skip).limit(limit).order_by(User.id)
+async def get_users(db: AsyncSession, skip: int = 0, limit: int = 100, organization_id: Optional[int] = None) -> tuple[List[User], int]:
+    """
+    List users with optional organization filtering
+    
+    Args:
+        db: Database session
+        skip: Number of records to skip
+        limit: Maximum number of records to return
+        organization_id: Organization ID for multi-tenant filtering (optional)
+        
+    Returns:
+        Tuple of (List of users, total count), filtered by organization if provided
+    """
+    # Eager load organization and domains relationships to avoid async issues
+    query = select(User).options(
+        selectinload(User.organization),
+        selectinload(User.domains)
     )
-    return result.scalars().all()
+    
+    # Filter by organization_id if provided (multi-tenant isolation)
+    if organization_id is not None:
+        query = query.where(User.organization_id == organization_id)
+    
+    # Get total count
+    count_query = select(func.count()).select_from(User)
+    if organization_id is not None:
+        count_query = count_query.where(User.organization_id == organization_id)
+    
+    count_result = await db.execute(count_query)
+    total = count_result.scalar() or 0
+    
+    # Apply pagination
+    query = query.offset(skip).limit(limit).order_by(User.id)
+    
+    result = await db.execute(query)
+    users = result.scalars().all()
+    
+    # Do NOT set user.domains = [] here - it triggers lazy loading which causes MissingGreenlet error
+    # Domains will be loaded separately in the endpoint from organization_domains table
+    
+    return users, total
 
 
 async def create_user(db: AsyncSession, user: UserCreate, hashed_password: str, organization_id: Optional[int] = None) -> User:
@@ -737,14 +772,143 @@ async def update_user(db: AsyncSession, user_id: int, user: UserUpdate, hashed_p
     if not db_user:
         return None
 
-    update_data = user.model_dump(exclude_unset=True, exclude={"password"})
+    # Handle domain_ids separately (not a direct User model field)
+    domain_ids = None
+    if hasattr(user, 'domain_ids') and user.domain_ids is not None:
+        domain_ids = user.domain_ids
+        # Remove domain_ids from update_data to avoid trying to set it on User model
+        update_data = user.model_dump(exclude_unset=True, exclude={"password", "domain_ids"})
+    else:
+        update_data = user.model_dump(exclude_unset=True, exclude={"password", "domain_ids"})
+    
     for key, value in update_data.items():
         setattr(db_user, key, value)
     if hashed_password:
         db_user.hashed_password = hashed_password
 
+    # Update domain associations if domain_ids provided
+    # IMPORTANT: Domain changes are organization-wide - update all users in the same organization
+    if domain_ids is not None:
+        from sqlalchemy import delete, insert, select as sql_select
+        # Get the user's organization_id
+        user_org_id = db_user.organization_id
+        
+        # #region agent log
+        import json
+        with open(r'c:\Users\90545\Desktop\MASAUSTU\Projects\PPE\.cursor\debug.log', 'a', encoding='utf-8') as f:
+            f.write(json.dumps({
+                'sessionId': 'debug-session',
+                'runId': 'run1',
+                'hypothesisId': 'G',
+                'location': 'backend/database/crud.py:789',
+                'message': 'Updating domains organization-wide',
+                'data': {
+                    'userId': user_id,
+                    'userOrgId': user_org_id,
+                    'domainIds': domain_ids,
+                    'updatingAllUsersInOrg': True
+                },
+                'timestamp': int(__import__('time').time() * 1000)
+            }) + '\n')
+        # #endregion
+        
+        if user_org_id:
+            # Get all users in the same organization
+            org_users_result = await db.execute(
+                sql_select(User.id).where(User.organization_id == user_org_id)
+            )
+            org_user_ids = [row[0] for row in org_users_result.fetchall()]
+            
+            # #region agent log
+            with open(r'c:\Users\90545\Desktop\MASAUSTU\Projects\PPE\.cursor\debug.log', 'a', encoding='utf-8') as f:
+                f.write(json.dumps({
+                    'sessionId': 'debug-session',
+                    'runId': 'run1',
+                    'hypothesisId': 'G',
+                    'location': 'backend/database/crud.py:810',
+                    'message': 'Found users in organization',
+                    'data': {
+                        'orgId': user_org_id,
+                        'userIds': org_user_ids,
+                        'count': len(org_user_ids)
+                    },
+                    'timestamp': int(__import__('time').time() * 1000)
+                }) + '\n')
+            # #endregion
+            
+            # Remove existing associations for all users in the organization
+            await db.execute(
+                delete(user_domains).where(user_domains.c.user_id.in_(org_user_ids))
+            )
+            
+            # Add new associations for all users in the organization
+            if domain_ids:
+                await db.execute(
+                    insert(user_domains).values([
+                        {"user_id": org_user_id, "domain_id": domain_id}
+                        for org_user_id in org_user_ids
+                        for domain_id in domain_ids
+                    ])
+                )
+        else:
+            # If user has no organization, only update that user
+            await db.execute(
+                delete(user_domains).where(user_domains.c.user_id == user_id)
+            )
+            if domain_ids:
+                await db.execute(
+                    insert(user_domains).values([
+                        {"user_id": user_id, "domain_id": domain_id}
+                        for domain_id in domain_ids
+                    ])
+                )
+
     await db.commit()
     await db.refresh(db_user)
+    
+    # #region agent log
+    import json
+    with open(r'c:\Users\90545\Desktop\MASAUSTU\Projects\PPE\.cursor\debug.log', 'a', encoding='utf-8') as f:
+        f.write(json.dumps({
+            'sessionId': 'debug-session',
+            'runId': 'run1',
+            'hypothesisId': 'A',
+            'location': 'backend/database/crud.py:805',
+            'message': 'After update_user commit',
+            'data': {
+                'userId': db_user.id,
+                'domainIdsProvided': domain_ids is not None,
+                'domainIds': domain_ids if domain_ids is not None else None
+            },
+            'timestamp': int(__import__('time').time() * 1000)
+        }) + '\n')
+    # #endregion
+    
+    # Eagerly load domains relationship to avoid lazy-loading issues
+    result = await db.execute(
+        select(User)
+        .where(User.id == db_user.id)
+        .options(selectinload(User.domains))
+    )
+    db_user = result.scalar_one()
+    
+    # #region agent log
+    with open(r'c:\Users\90545\Desktop\MASAUSTU\Projects\PPE\.cursor\debug.log', 'a', encoding='utf-8') as f:
+        f.write(json.dumps({
+            'sessionId': 'debug-session',
+            'runId': 'run1',
+            'hypothesisId': 'A',
+            'location': 'backend/database/crud.py:814',
+            'message': 'After eager load domains',
+            'data': {
+                'userId': db_user.id,
+                'domainsCount': len(db_user.domains) if db_user.domains else 0,
+                'domainsIds': [d.id for d in db_user.domains] if db_user.domains else []
+            },
+            'timestamp': int(__import__('time').time() * 1000)
+        }) + '\n')
+    # #endregion
+    
     return db_user
 
 
@@ -758,6 +922,200 @@ async def delete_user(db: AsyncSession, user_id: int) -> bool:
     await db.execute(delete(User).where(User.id == user_id))
     await db.commit()
     return True
+
+
+# ==========================================
+# USER PHOTO CRUD
+# ==========================================
+
+async def create_user_photo(
+    db: AsyncSession,
+    user_id: int,
+    photo_path: str,
+    face_encoding: Optional[List[float]] = None,
+    is_primary: bool = False,
+    uploaded_by: Optional[int] = None
+) -> "UserPhoto":
+    """
+    Create a new user photo record
+    
+    Args:
+        db: Database session
+        user_id: User ID
+        photo_path: Path to stored photo
+        face_encoding: Face encoding vector (optional)
+        is_primary: Whether this is the primary photo
+        uploaded_by: User ID who uploaded the photo
+        
+    Returns:
+        Created UserPhoto object
+    """
+    from backend.database.models import UserPhoto
+    
+    # If this is set as primary, unset other primary photos for this user
+    if is_primary:
+        await db.execute(
+            update(UserPhoto)
+            .where(UserPhoto.user_id == user_id)
+            .values(is_primary=False)
+        )
+    
+    db_photo = UserPhoto(
+        user_id=user_id,
+        photo_path=photo_path,
+        face_encoding=face_encoding,
+        is_primary=is_primary,
+        uploaded_by=uploaded_by
+    )
+    
+    db.add(db_photo)
+    await db.commit()
+    await db.refresh(db_photo)
+    return db_photo
+
+
+async def get_user_photos(
+    db: AsyncSession,
+    user_id: int
+) -> List["UserPhoto"]:
+    """
+    Get all photos for a user
+    
+    Args:
+        db: Database session
+        user_id: User ID
+        
+    Returns:
+        List of UserPhoto objects
+    """
+    from backend.database.models import UserPhoto
+    from sqlalchemy import select
+    
+    result = await db.execute(
+        select(UserPhoto)
+        .where(UserPhoto.user_id == user_id)
+        .order_by(UserPhoto.is_primary.desc(), UserPhoto.uploaded_at.desc())
+    )
+    return list(result.scalars().all())
+
+
+async def get_user_photos_by_organization(
+    db: AsyncSession,
+    organization_id: int
+) -> List["UserPhoto"]:
+    """
+    Get all user photos for users in an organization
+    
+    Args:
+        db: Database session
+        organization_id: Organization ID
+        
+    Returns:
+        List of UserPhoto objects
+    """
+    from backend.database.models import UserPhoto, User
+    from sqlalchemy import select
+    
+    result = await db.execute(
+        select(UserPhoto)
+        .join(User, UserPhoto.user_id == User.id)
+        .where(User.organization_id == organization_id)
+        .where(UserPhoto.face_encoding.isnot(None))  # Only photos with encoding
+    )
+    return list(result.scalars().all())
+
+
+async def get_user_photo_by_id(
+    db: AsyncSession,
+    photo_id: int
+) -> Optional["UserPhoto"]:
+    """
+    Get user photo by ID
+    
+    Args:
+        db: Database session
+        photo_id: Photo ID
+        
+    Returns:
+        UserPhoto object or None
+    """
+    from backend.database.models import UserPhoto
+    from sqlalchemy import select
+    
+    result = await db.execute(
+        select(UserPhoto)
+        .where(UserPhoto.id == photo_id)
+    )
+    return result.scalar_one_or_none()
+
+
+async def update_user_photo(
+    db: AsyncSession,
+    photo_id: int,
+    face_encoding: Optional[List[float]] = None,
+    is_primary: Optional[bool] = None
+) -> Optional["UserPhoto"]:
+    """
+    Update user photo
+    
+    Args:
+        db: Database session
+        photo_id: Photo ID
+        face_encoding: Updated face encoding (optional)
+        is_primary: Whether to set as primary (optional)
+        
+    Returns:
+        Updated UserPhoto object or None
+    """
+    from backend.database.models import UserPhoto
+    from sqlalchemy import select, update
+    
+    photo = await get_user_photo_by_id(db, photo_id)
+    if not photo:
+        return None
+    
+    # If setting as primary, unset other primary photos
+    if is_primary:
+        await db.execute(
+            update(UserPhoto)
+            .where(UserPhoto.user_id == photo.user_id)
+            .where(UserPhoto.id != photo_id)
+            .values(is_primary=False)
+        )
+    
+    if face_encoding is not None:
+        photo.face_encoding = face_encoding
+    if is_primary is not None:
+        photo.is_primary = is_primary
+    
+    await db.commit()
+    await db.refresh(photo)
+    return photo
+
+
+async def delete_user_photo(
+    db: AsyncSession,
+    photo_id: int
+) -> bool:
+    """
+    Delete user photo
+    
+    Args:
+        db: Database session
+        photo_id: Photo ID
+        
+    Returns:
+        True if deleted, False if not found
+    """
+    from backend.database.models import UserPhoto
+    from sqlalchemy import delete
+    
+    result = await db.execute(
+        delete(UserPhoto)
+        .where(UserPhoto.id == photo_id)
+    )
+    await db.commit()
+    return result.rowcount > 0
 
 
 # ==========================================
@@ -911,4 +1269,193 @@ async def has_organization_domain(
     )
     count = result.scalar_one()
     return count > 0
+
+
+# ==========================================
+# USER PHOTO CRUD
+# ==========================================
+
+async def create_user_photo(
+    db: AsyncSession,
+    user_id: int,
+    photo_path: str,
+    face_encoding: Optional[List[float]] = None,
+    is_primary: bool = False,
+    uploaded_by: Optional[int] = None
+) -> "UserPhoto":
+    """
+    Create a new user photo record
+    
+    Args:
+        db: Database session
+        user_id: User ID
+        photo_path: Path to stored photo
+        face_encoding: Face encoding vector (optional)
+        is_primary: Whether this is the primary photo
+        uploaded_by: User ID who uploaded the photo
+        
+    Returns:
+        Created UserPhoto object
+    """
+    from backend.database.models import UserPhoto
+    
+    # If this is set as primary, unset other primary photos for this user
+    if is_primary:
+        await db.execute(
+            update(UserPhoto)
+            .where(UserPhoto.user_id == user_id)
+            .values(is_primary=False)
+        )
+    
+    db_photo = UserPhoto(
+        user_id=user_id,
+        photo_path=photo_path,
+        face_encoding=face_encoding,
+        is_primary=is_primary,
+        uploaded_by=uploaded_by
+    )
+    
+    db.add(db_photo)
+    await db.commit()
+    await db.refresh(db_photo)
+    return db_photo
+
+
+async def get_user_photos(
+    db: AsyncSession,
+    user_id: int
+) -> List["UserPhoto"]:
+    """
+    Get all photos for a user
+    
+    Args:
+        db: Database session
+        user_id: User ID
+        
+    Returns:
+        List of UserPhoto objects
+    """
+    from backend.database.models import UserPhoto
+    
+    result = await db.execute(
+        select(UserPhoto)
+        .where(UserPhoto.user_id == user_id)
+        .order_by(UserPhoto.is_primary.desc(), UserPhoto.uploaded_at.desc())
+    )
+    return list(result.scalars().all())
+
+
+async def get_user_photos_by_organization(
+    db: AsyncSession,
+    organization_id: int
+) -> List["UserPhoto"]:
+    """
+    Get all user photos for users in an organization
+    
+    Args:
+        db: Database session
+        organization_id: Organization ID
+        
+    Returns:
+        List of UserPhoto objects
+    """
+    from backend.database.models import UserPhoto, User
+    
+    result = await db.execute(
+        select(UserPhoto)
+        .join(User, UserPhoto.user_id == User.id)
+        .where(User.organization_id == organization_id)
+        .where(UserPhoto.face_encoding.isnot(None))  # Only photos with encoding
+    )
+    return list(result.scalars().all())
+
+
+async def get_user_photo_by_id(
+    db: AsyncSession,
+    photo_id: int
+) -> Optional["UserPhoto"]:
+    """
+    Get user photo by ID
+    
+    Args:
+        db: Database session
+        photo_id: Photo ID
+        
+    Returns:
+        UserPhoto object or None
+    """
+    from backend.database.models import UserPhoto
+    
+    result = await db.execute(
+        select(UserPhoto)
+        .where(UserPhoto.id == photo_id)
+    )
+    return result.scalar_one_or_none()
+
+
+async def update_user_photo(
+    db: AsyncSession,
+    photo_id: int,
+    face_encoding: Optional[List[float]] = None,
+    is_primary: Optional[bool] = None
+) -> Optional["UserPhoto"]:
+    """
+    Update user photo
+    
+    Args:
+        db: Database session
+        photo_id: Photo ID
+        face_encoding: Updated face encoding (optional)
+        is_primary: Whether to set as primary (optional)
+        
+    Returns:
+        Updated UserPhoto object or None
+    """
+    from backend.database.models import UserPhoto
+    
+    photo = await get_user_photo_by_id(db, photo_id)
+    if not photo:
+        return None
+    
+    # If setting as primary, unset other primary photos
+    if is_primary:
+        await db.execute(
+            update(UserPhoto)
+            .where(UserPhoto.user_id == photo.user_id)
+            .where(UserPhoto.id != photo_id)
+            .values(is_primary=False)
+        )
+    
+    if face_encoding is not None:
+        photo.face_encoding = face_encoding
+    if is_primary is not None:
+        photo.is_primary = is_primary
+    
+    await db.commit()
+    await db.refresh(photo)
+    return photo
+
+
+async def delete_user_photo(
+    db: AsyncSession,
+    photo_id: int
+) -> bool:
+    """
+    Delete user photo
+    
+    Args:
+        db: Database session
+        photo_id: Photo ID
+        
+    Returns:
+        True if deleted, False if not found
+    """
+    from backend.database.models import UserPhoto
+    
+    result = await db.execute(
+        delete(UserPhoto)
+        .where(UserPhoto.id == photo_id)
+    )
+    await db.commit()
+    return result.rowcount > 0
 

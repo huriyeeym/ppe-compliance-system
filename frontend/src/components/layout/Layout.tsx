@@ -10,7 +10,8 @@ interface LayoutProps {
 export default function Layout({ children }: LayoutProps) {
   const location = useLocation()
 
-  if (location.pathname === '/login') {
+  // Don't show sidebar/navbar for auth pages
+  if (location.pathname === '/sign-in' || location.pathname === '/signup' || location.pathname === '/forgot-password') {
     return <>{children}</>
   }
 

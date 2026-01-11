@@ -137,8 +137,22 @@ class HttpClient {
     // Handle specific status codes
     switch (status) {
       case 401:
-        // Unauthorized - redirect to login
-        // TODO: Implement auth redirect
+        // Unauthorized - clear token and redirect to login
+        // Clear authentication data from localStorage
+        localStorage.removeItem('auth_token')
+        localStorage.removeItem('auth_user')
+        
+        // Dispatch custom event to notify AuthContext
+        window.dispatchEvent(new CustomEvent('auth:logout', { detail: { reason: 'UNAUTHORIZED' } }))
+        
+        // Redirect to login page if not already there
+        if (window.location.pathname !== '/sign-in' && window.location.pathname !== '/login') {
+          // Use setTimeout to avoid navigation during error handling
+          setTimeout(() => {
+            window.location.href = '/sign-in'
+          }, 100)
+        }
+        
         return Promise.reject({
           type: 'UNAUTHORIZED',
           message: 'Your session has expired. Please login again.',

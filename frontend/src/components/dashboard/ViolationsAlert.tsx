@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import type { ReactNode } from 'react'
 import { HardHat, Shield, Glasses, User, Footprints, Hand, AlertTriangle, CheckCircle2 } from 'lucide-react'
 import { violationService, type Violation } from '../../lib/api/services'
 import { domainService } from '../../lib/api/services'
 import { logger } from '../../lib/utils/logger'
 import ViolationDetailModal from '../violations/ViolationDetailModal'
+import { useWebSocket } from '../../lib/websocket/useWebSocket'
 
 interface ViolationsAlertProps {
   domainId?: string
@@ -23,26 +24,82 @@ export default function ViolationsAlert({ domainId }: ViolationsAlertProps) {
   const [logs, setLogs] = useState<Violation[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedViolation, setSelectedViolation] = useState<Violation | null>(null)
+  const [domainIdNumber, setDomainIdNumber] = useState<number | null>(null)
+  const wsConnectedRef = useRef(false) // Track wsConnected state
 
+  // Find domain ID from domain type
   useEffect(() => {
     if (!domainId) return
+
+    const findDomain = async () => {
+      try {
+        const domains = await domainService.getActive()
+        const domain = domains.find(d => d.type === domainId)
+        if (domain) {
+          setDomainIdNumber(domain.id)
+        } else {
+          logger.warn('Domain not found', { domainType: domainId })
+        }
+      } catch (err) {
+        logger.error('Failed to find domain', err)
+      }
+    }
+
+    findDomain()
+  }, [domainId])
+
+  // ✅ WebSocket for real-time violation notifications
+  // Use useCallback to stabilize the onViolation callback
+  const handleViolation = useCallback((violation: any) => {
+    // Add new violation to alerts if it's critical and unacknowledged
+    if (violation.severity === 'critical') {
+      setAlerts(prev => {
+        // Avoid duplicates
+        if (prev.some(a => a.id === violation.id)) {
+          return prev
+        }
+        // Add to beginning and keep only last 10
+        return [{ ...violation, acknowledged: false } as Violation, ...prev].slice(0, 10)
+      })
+    }
+    
+    // Add to logs (all violations)
+    setLogs(prev => {
+      // Avoid duplicates
+      if (prev.some(l => l.id === violation.id)) {
+        return prev
+      }
+      // Add to beginning and keep only last 20
+      return [{ ...violation } as Violation, ...prev].slice(0, 20)
+    })
+  }, [])
+
+  // Stabilize domainIds array to prevent unnecessary reconnections
+  const domainIds = useMemo(() => {
+    return domainIdNumber ? [domainIdNumber] : []
+  }, [domainIdNumber])
+
+  const { isConnected: wsConnected } = useWebSocket({
+    domainIds,
+    onViolation: handleViolation,
+  })
+
+  // Update ref when wsConnected changes
+  useEffect(() => {
+    wsConnectedRef.current = wsConnected
+  }, [wsConnected])
+
+  useEffect(() => {
+    if (!domainIdNumber) return
 
     const loadViolations = async () => {
       try {
         setLoading(true)
-        // Find Domain ID (convert from type to ID)
-        const domains = await domainService.getActive()
-        const domain = domains.find(d => d.type === domainId)
-        if (!domain) {
-          logger.warn('Domain not found', { domainType: domainId })
-          return
-        }
-
-        logger.debug('Loading violations', { domainId: domain.id })
+        logger.debug('Loading violations', { domainId: domainIdNumber })
 
         // Fetch last 10 violations (unacknowledged, critical)
         const response = await violationService.getAll({
-          domain_id: domain.id,
+          domain_id: domainIdNumber,
           acknowledged: false,
           severity: 'critical',
           limit: 10,
@@ -53,7 +110,7 @@ export default function ViolationsAlert({ domainId }: ViolationsAlertProps) {
 
         // Violation history (all violations, last 20)
         const logsResponse = await violationService.getAll({
-          domain_id: domain.id,
+          domain_id: domainIdNumber,
           limit: 20,
         })
         setLogs(logsResponse.items)
@@ -65,12 +122,18 @@ export default function ViolationsAlert({ domainId }: ViolationsAlertProps) {
       }
     }
 
+    // Initial load
     loadViolations()
 
-    // Refresh every 30 seconds
-    const interval = setInterval(loadViolations, 30000)
+    // Fallback polling (every 60 seconds) if WebSocket is not connected
+    // Use ref to track wsConnected to avoid recreating interval
+    const interval = setInterval(() => {
+      if (!wsConnectedRef.current) {
+        loadViolations()
+      }
+    }, 60000)
     return () => clearInterval(interval)
-  }, [domainId])
+  }, [domainIdNumber]) // Remove wsConnected from dependencies
 
   const getPPEIcon = (type: string): ReactNode => {
     const icons: Record<string, ReactNode> = {
@@ -122,7 +185,7 @@ export default function ViolationsAlert({ domainId }: ViolationsAlertProps) {
         <h3 className="text-section-title mb-4">Recent Violations</h3>
         <div className="space-y-2">
           {alerts.length === 0 ? (
-            <div className="text-center py-8 text-slate-500">
+            <div className="text-center py-8 text-gray-500">
               <CheckCircle2 className="w-12 h-12 mx-auto mb-2 text-green-500 opacity-30" />
               <p className="text-body">No violations in the last 24 hours</p>
             </div>
@@ -130,7 +193,7 @@ export default function ViolationsAlert({ domainId }: ViolationsAlertProps) {
             alerts.map((alert) => (
               <div
                 key={alert.id}
-                className="flex items-start justify-between p-3 bg-slate-900/50 rounded-lg hover:bg-slate-900/70 transition-colors border-l-4 border-red-500"
+                className="flex items-start justify-between p-3 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors border-l-4 border-red-500 shadow-sm"
               >
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-1">
@@ -146,7 +209,7 @@ export default function ViolationsAlert({ domainId }: ViolationsAlertProps) {
                   <p className="text-body font-medium">
                     Missing: {alert.missing_ppe.map(ppe => getPPEDisplayName(ppe.type)).join(', ')}
                   </p>
-                  <p className="text-caption text-slate-500">
+                  <p className="text-caption text-gray-600">
                     Camera #{alert.camera_id} • {formatTime(alert.timestamp)}
                   </p>
                 </div>
@@ -167,27 +230,27 @@ export default function ViolationsAlert({ domainId }: ViolationsAlertProps) {
         <h3 className="text-section-title mb-4">Violation History</h3>
         <div className="space-y-1 max-h-96 overflow-y-auto">
           {logs.length === 0 ? (
-            <div className="text-center py-8 text-slate-500">
+            <div className="text-center py-8 text-gray-500">
               <p className="text-body">No violation history</p>
             </div>
           ) : (
             logs.map((log) => (
               <div
                 key={log.id}
-                className="flex items-center justify-between p-2 hover:bg-slate-900/50 rounded transition-colors"
+                className="flex items-center justify-between p-2 hover:bg-gray-50 rounded transition-colors bg-white border border-gray-100"
               >
                 <div className="flex items-center gap-2">
-                  <div className="text-slate-400">
+                  <div className="text-gray-400">
                     {log.missing_ppe[0] && getPPEIcon(log.missing_ppe[0].type)}
                   </div>
                   <div>
                     <p className="text-body">
                       {log.missing_ppe[0] && getPPEDisplayName(log.missing_ppe[0].type)}
                     </p>
-                    <p className="text-caption text-slate-500">Camera #{log.camera_id}</p>
+                    <p className="text-caption text-gray-600">Camera #{log.camera_id}</p>
                   </div>
                 </div>
-                <p className="text-caption text-slate-500">{formatTime(log.timestamp)}</p>
+                <p className="text-caption text-gray-600">{formatTime(log.timestamp)}</p>
               </div>
             ))
           )}

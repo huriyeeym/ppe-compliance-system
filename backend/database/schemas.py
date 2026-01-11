@@ -4,7 +4,9 @@ Separate from SQLAlchemy models for clean API layer
 """
 
 from pydantic import BaseModel, Field, ConfigDict, EmailStr
-from typing import Optional, List
+from typing import Optional, List, TypeVar, Generic
+
+T = TypeVar('T')
 from datetime import datetime
 from backend.database.models import DomainStatus, SourceType, ViolationSeverity, ViolationStatus, UserRole
 
@@ -192,6 +194,8 @@ class ViolationBase(BaseModel):
     assigned_to: Optional[str] = Field(None, max_length=100, description="Assigned user email/username")
     notes: Optional[str] = Field(None, description="User notes")
     corrective_action: Optional[str] = Field(None, description="Corrective action taken")
+    detected_user_id: Optional[int] = Field(None, description="User ID matched via face recognition")
+    face_match_confidence: Optional[float] = Field(None, ge=0.0, le=1.0, description="Face match confidence score")
     frame_snapshot: Optional[str] = Field(
         default=None,
         description="Base64 snapshot payload (deprecated, kept for backward compatibility)"
@@ -217,6 +221,7 @@ class ViolationUpdate(BaseModel):
     assigned_to: Optional[str] = Field(None, max_length=100)
     notes: Optional[str] = None
     corrective_action: Optional[str] = None
+    detected_user_id: Optional[int] = Field(None, description="Manually assign user ID")
     # Legacy fields (deprecated)
     acknowledged: Optional[bool] = None
     acknowledged_by: Optional[str] = Field(None, max_length=100)
@@ -259,12 +264,14 @@ class ViolationFilterParams(BaseModel):
     acknowledged: Optional[bool] = None
 
 
-class PaginatedResponse(BaseModel):
+class PaginatedResponse(BaseModel, Generic[T]):
     """Generic paginated response"""
     total: int = Field(..., description="Total number of items")
     skip: int = Field(..., description="Number of items skipped")
     limit: int = Field(..., description="Number of items per page")
-    items: List = Field(..., description="List of items")
+    items: List[T] = Field(..., description="List of items")
+    
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ==========================================
@@ -291,10 +298,12 @@ class UserCreate(UserBase):
 
 class UserUpdate(BaseModel):
     """Schema for updating a user"""
+    email: Optional[EmailStr] = None
     full_name: Optional[str] = Field(None, min_length=2, max_length=100)
     password: Optional[str] = Field(None, min_length=6, max_length=100)
     role: Optional[UserRole] = None
     domain_id: Optional[int] = Field(None, description="Domain ID for domain-based access")
+    domain_ids: Optional[List[int]] = Field(None, description="List of domain IDs for multi-domain access")
     permissions: Optional[List[str]] = Field(None, description="Additional permissions")
     is_active: Optional[bool] = None
 
@@ -302,9 +311,36 @@ class UserUpdate(BaseModel):
 class UserResponse(UserBase):
     """Response schema for user"""
     id: int
+    organization_id: Optional[int] = Field(None, description="Organization ID the user belongs to")
     created_at: datetime
     last_login: Optional[datetime]
     domains: Optional[List["DomainResponse"]] = Field(None, description="User's accessible domains")
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# ==========================================
+# USER PHOTO SCHEMAS
+# ==========================================
+
+class UserPhotoBase(BaseModel):
+    """Base user photo fields"""
+    user_id: int = Field(..., gt=0)
+    photo_path: str = Field(..., max_length=300)
+    is_primary: bool = Field(default=False)
+
+
+class UserPhotoCreate(UserPhotoBase):
+    """Schema for creating a user photo"""
+    face_encoding: Optional[List[float]] = Field(None, description="Face encoding vector")
+
+
+class UserPhotoResponse(UserPhotoBase):
+    """Response schema for user photo"""
+    id: int
+    face_encoding: Optional[List[float]] = None
+    uploaded_at: datetime
+    uploaded_by: Optional[int] = None
 
     model_config = ConfigDict(from_attributes=True)
 

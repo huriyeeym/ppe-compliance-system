@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { Camera as CameraIcon, Wifi, WifiOff, AlertTriangle, CheckCircle2, Construction, ShieldAlert, Building2, Factory, Warehouse, Pickaxe, Cross, UtensilsCrossed, Loader, Activity, Globe, TrendingUp, TrendingDown, BarChart3, Clock } from 'lucide-react'
+import { Camera as CameraIcon, Wifi, WifiOff, AlertTriangle, CheckCircle2, Construction, ShieldAlert, Building2, Factory, Warehouse, Pickaxe, Cross, UtensilsCrossed, Loader, Activity, Globe, TrendingUp, TrendingDown, BarChart3, Clock, LayoutDashboard } from 'lucide-react'
 import KPICard from '../components/dashboard/KPICard'
 import { useDomain } from '../context/DomainContext'
 import { cameraService, type Camera } from '../lib/api/services'
@@ -183,17 +183,24 @@ export default function Dashboard() {
   // Domain-specific view
   return (
     <div className="p-6 space-y-6">
-      {/* Header - Domain and Camera Selection */}
-      <div className="mb-8">
-        <div className="flex items-center justify-between mb-4">
+      {/* Header */}
+      <div className="mb-6">
+        <div className="flex items-center justify-between">
           <div>
             <h1 className="text-page-title flex items-center gap-2">
-              {getDomainIcon(selectedDomain.type)}
-              {selectedDomain.name}
+              <LayoutDashboard className="w-7 h-7 text-[#405189]" />
+              Dashboard
             </h1>
             <p className="text-caption text-gray-600 mt-1">
-              Real-time PPE compliance monitoring
+              Real-time monitoring and statistics for selected domain
             </p>
+          </div>
+        </div>
+        {/* Domain Selector */}
+        <div className="mt-4">
+          <div className="flex items-center gap-2">
+            {getDomainIcon(selectedDomain.type)}
+            <span className="text-body font-medium text-gray-900">{selectedDomain.name}</span>
           </div>
         </div>
       </div>

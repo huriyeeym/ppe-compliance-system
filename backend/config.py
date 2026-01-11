@@ -71,6 +71,11 @@ class Settings(BaseSettings):
     models_dir: Path = Path("data/models")
     logs_dir: Path = Path("logs")
     snapshots_dir: Path = Path("data/snapshots")
+    user_photos_dir: Path = Path("data/user_photos")
+    
+    # Face Recognition Settings
+    face_recognition_threshold: float = 0.6  # Minimum confidence for match (0.0-1.0)
+    face_recognition_model: str = "VGG-Face"  # DeepFace model: VGG-Face, Facenet, OpenFace, DeepFace, DeepID, Dlib, ArcFace
     
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -93,6 +98,7 @@ def initialize_directories():
         settings.models_dir,
         settings.logs_dir,
         settings.snapshots_dir,
+        settings.user_photos_dir,
     ]
     for directory in directories:
         directory.mkdir(parents=True, exist_ok=True)

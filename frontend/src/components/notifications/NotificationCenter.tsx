@@ -1,9 +1,10 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { Bell, X, Eye, ExternalLink } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { violationService, type Violation } from '../../lib/api/services'
 import { useDomain } from '../../context/DomainContext'
 import { logger } from '../../lib/utils/logger'
+import { useWebSocket } from '../../lib/websocket/useWebSocket'
 
 interface NotificationItem {
   id: number
@@ -20,8 +21,57 @@ export default function NotificationCenter() {
   const [notifications, setNotifications] = useState<NotificationItem[]>([])
   const [unreadCount, setUnreadCount] = useState(0)
   const dropdownRef = useRef<HTMLDivElement>(null)
+  const wsConnectedRef = useRef(false) // Track wsConnected state
 
-  // Load recent violations as notifications
+  // ✅ WebSocket for real-time violation notifications
+  // Use useCallback to stabilize the onViolation callback
+  const handleViolation = useCallback((violation: any) => {
+    // Add new violation notification in real-time
+    const newNotification: NotificationItem = {
+      id: violation.id,
+      message: `${violation.severity === 'critical' ? 'Critical' : 'Violation'} detected: ${violation.missing_ppe.map((p: any) => p.type.replace('_', ' ')).join(', ')}`,
+      timestamp: violation.timestamp,
+      severity: violation.severity,
+      read: false,
+      violation: violation as any, // Type assertion for compatibility
+    }
+    
+    setNotifications(prev => {
+      // Avoid duplicates
+      if (prev.some(n => n.id === violation.id)) {
+        return prev
+      }
+      // Add to beginning and keep only last 20
+      return [newNotification, ...prev].slice(0, 20)
+    })
+    
+    setUnreadCount(prev => prev + 1)
+    
+    // Show browser notification if permission granted
+    if ('Notification' in window && Notification.permission === 'granted') {
+      new Notification('PPE Violation Detected', {
+        body: newNotification.message,
+        icon: '/favicon.ico',
+      })
+    }
+  }, [])
+
+  // Stabilize domainIds array to prevent unnecessary reconnections
+  const domainIds = useMemo(() => {
+    return selectedDomain ? [selectedDomain.id] : []
+  }, [selectedDomain?.id])
+
+  const { isConnected: wsConnected } = useWebSocket({
+    domainIds,
+    onViolation: handleViolation,
+  })
+
+  // Update ref when wsConnected changes
+  useEffect(() => {
+    wsConnectedRef.current = wsConnected
+  }, [wsConnected])
+
+  // Load recent violations as notifications (initial load + fallback polling)
   useEffect(() => {
     if (!selectedDomain) return
 
@@ -54,12 +104,18 @@ export default function NotificationCenter() {
       }
     }
 
+    // Initial load
     loadNotifications()
 
-    // Refresh every 30 seconds
-    const interval = setInterval(loadNotifications, 30000)
+    // Fallback polling (every 60 seconds) if WebSocket is not connected
+    // Use ref to track wsConnected to avoid recreating interval
+    const interval = setInterval(() => {
+      if (!wsConnectedRef.current) {
+        loadNotifications()
+      }
+    }, 60000)
     return () => clearInterval(interval)
-  }, [selectedDomain])
+  }, [selectedDomain]) // Remove wsConnected from dependencies
 
   // Close dropdown when clicking outside
   useEffect(() => {

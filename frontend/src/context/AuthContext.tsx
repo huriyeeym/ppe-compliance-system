@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { User } from '../lib/api/services/authService'
+import { authService } from '../lib/api/services/authService'
 
 interface AuthContextValue {
   user: User | null
@@ -8,6 +9,7 @@ interface AuthContextValue {
   initialized: boolean
   login: (token: string, user: User) => void
   logout: () => void
+  refreshUser: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined)
@@ -25,6 +27,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(JSON.parse(storedUser))
     }
     setInitialized(true)
+
+    // Listen for logout events from httpClient (e.g., on 401 errors)
+    const handleLogout = () => {
+      logout()
+    }
+
+    window.addEventListener('auth:logout', handleLogout)
+
+    return () => {
+      window.removeEventListener('auth:logout', handleLogout)
+    }
   }, [])
 
   const login = (newToken: string, newUser: User) => {
@@ -41,8 +54,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null)
   }
 
+  const refreshUser = async () => {
+    try {
+      const updatedUser = await authService.me()
+      console.log('🔄 Refreshed user from API:', updatedUser)
+      console.log('🔄 User organization_id:', updatedUser.organization_id)
+      const currentToken = localStorage.getItem('auth_token')
+      if (currentToken) {
+        localStorage.setItem('auth_user', JSON.stringify(updatedUser))
+        setUser(updatedUser)
+      }
+    } catch (error) {
+      console.error('Failed to refresh user:', error)
+      // If refresh fails, don't logout - just log the error
+    }
+  }
+
   return (
-    <AuthContext.Provider value={{ user, token, initialized, login, logout }}>
+    <AuthContext.Provider value={{ user, token, initialized, login, logout, refreshUser }}>
       {children}
     </AuthContext.Provider>
   )

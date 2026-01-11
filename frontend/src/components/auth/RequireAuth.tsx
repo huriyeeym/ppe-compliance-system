@@ -24,14 +24,22 @@ export default function RequireAuth({ children, role }: Props) {
   }
 
   if (!user) {
-    return <Navigate to="/login" replace />
+    return <Navigate to="/sign-in" replace />
   }
 
   // Check role access
   if (role) {
     if (Array.isArray(role)) {
       // Multiple roles allowed
-      if (!role.includes(user.role)) {
+      // super_admin can access any admin/manager pages
+      if (user.role === 'super_admin') {
+        // super_admin can access admin and manager pages
+        if (role.includes('admin') || role.includes('manager')) {
+          // Allow access
+        } else if (!role.includes(user.role)) {
+          return <Navigate to="/" replace />
+        }
+      } else if (!role.includes(user.role)) {
         return <Navigate to="/" replace />
       }
     } else if (role === 'admin') {

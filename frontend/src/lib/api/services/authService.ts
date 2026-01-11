@@ -1,13 +1,29 @@
 import { httpClient } from '../httpClient'
 
+export interface Domain {
+  id: number
+  name: string
+  type: string
+  icon?: string | null
+  description?: string | null
+  status: string
+  created_at: string
+  model_status?: string
+  model_last_updated?: string | null
+}
+
 export interface User {
   id: number
   email: string
   full_name: string
-  role: 'admin' | 'operator'
+  role: 'super_admin' | 'admin' | 'manager' | 'operator' | 'viewer'
+  domain_id?: number | null
+  organization_id?: number | null
+  permissions?: string[]
   is_active: boolean
   created_at: string
-  last_login?: string
+  last_login?: string | null
+  domains?: Domain[] | null
 }
 
 export interface LoginResponse {
@@ -29,8 +45,25 @@ class AuthService {
     })
   }
 
+  async register(email: string, password: string, fullName: string, organizationName?: string): Promise<LoginResponse> {
+    return httpClient.post<LoginResponse>(`${this.basePath}/register`, {
+      email,
+      password,
+      full_name: fullName,
+      organization_name: organizationName,
+      role: 'viewer' // Default role for self-registration (more secure than 'operator')
+    })
+  }
+
   async me(): Promise<User> {
     return httpClient.get<User>(`${this.basePath}/me`)
+  }
+
+  async selectDomains(domainIds: number[]): Promise<{ message: string; domains: Array<{ id: number; name: string; type: string }> }> {
+    return httpClient.post<{ message: string; domains: Array<{ id: number; name: string; type: string }> }>(
+      `${this.basePath}/select-domains`,
+      { domain_ids: domainIds }
+    )
   }
 }
 

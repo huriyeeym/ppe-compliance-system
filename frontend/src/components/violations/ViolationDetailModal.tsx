@@ -1,5 +1,7 @@
-import { X, User, Camera, Clock, AlertTriangle, MapPin } from 'lucide-react'
-import { useEffect } from 'react'
+import { X, User, Camera, Clock, AlertTriangle, MapPin, UserCheck } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { userService, type User } from '../../lib/api/services/userService'
+import toast from 'react-hot-toast'
 
 interface ViolationDetailModalProps {
   violation: {
@@ -14,8 +16,12 @@ interface ViolationDetailModalProps {
     confidence: number
     frame_snapshot?: string
     status?: string
+    detected_user_id?: number | null
+    detected_user?: { id: number; full_name: string; email: string } | null
+    face_match_confidence?: number | null
   }
   onClose: () => void
+  onUserReassign?: (violationId: number, userId: number | null) => Promise<void>
 }
 
 const PPE_LABELS: Record<string, string> = {
@@ -26,7 +32,12 @@ const PPE_LABELS: Record<string, string> = {
   safety_glasses: 'Safety Glasses',
 }
 
-export default function ViolationDetailModal({ violation, onClose }: ViolationDetailModalProps) {
+export default function ViolationDetailModal({ violation, onClose, onUserReassign }: ViolationDetailModalProps) {
+  const [detectedUser, setDetectedUser] = useState<User | null>(null)
+  const [loadingUser, setLoadingUser] = useState(false)
+  const [allUsers, setAllUsers] = useState<User[]>([])
+  const [showUserSelect, setShowUserSelect] = useState(false)
+
   // Close on ESC key
   useEffect(() => {
     const handleEsc = (e: KeyboardEvent) => {
@@ -35,6 +46,69 @@ export default function ViolationDetailModal({ violation, onClose }: ViolationDe
     window.addEventListener('keydown', handleEsc)
     return () => window.removeEventListener('keydown', handleEsc)
   }, [onClose])
+
+  // Load detected user if detected_user_id exists
+  useEffect(() => {
+    if (violation.detected_user_id) {
+      loadDetectedUser(violation.detected_user_id)
+    } else if (violation.detected_user) {
+      // Use provided user data
+      setDetectedUser({
+        id: violation.detected_user.id,
+        full_name: violation.detected_user.full_name,
+        email: violation.detected_user.email,
+      } as User)
+    }
+  }, [violation.detected_user_id, violation.detected_user])
+
+  // Load all users for reassignment
+  useEffect(() => {
+    if (showUserSelect) {
+      loadAllUsers()
+    }
+  }, [showUserSelect])
+
+  const loadDetectedUser = async (userId: number) => {
+    setLoadingUser(true)
+    try {
+      const users = await userService.getAll()
+      const user = users.find(u => u.id === userId)
+      if (user) {
+        setDetectedUser(user)
+      }
+    } catch (err) {
+      console.error('Error loading detected user:', err)
+    } finally {
+      setLoadingUser(false)
+    }
+  }
+
+  const loadAllUsers = async () => {
+    try {
+      const users = await userService.getAll()
+      setAllUsers(users)
+    } catch (err) {
+      console.error('Error loading users:', err)
+      toast.error('Failed to load users')
+    }
+  }
+
+  const handleReassignUser = async (userId: number | null) => {
+    if (!onUserReassign) return
+    
+    try {
+      await onUserReassign(violation.id, userId)
+      if (userId) {
+        await loadDetectedUser(userId)
+      } else {
+        setDetectedUser(null)
+      }
+      setShowUserSelect(false)
+      toast.success('User reassigned successfully')
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to reassign user')
+    }
+  }
 
   const formatDateTime = (timestamp: string) => {
     const date = new Date(timestamp)
@@ -198,6 +272,113 @@ export default function ViolationDetailModal({ violation, onClose }: ViolationDe
                     />
                   </div>
                 </div>
+              </div>
+
+              {/* Detected User (Face Recognition) */}
+              <div>
+                <h3 className="text-body font-semibold text-slate-50 mb-3 flex items-center gap-2">
+                  <UserCheck className="h-5 w-5 text-blue-400" />
+                  Identified Person
+                </h3>
+                {loadingUser ? (
+                  <div className="bg-slate-800 rounded-lg p-4 text-center">
+                    <p className="text-caption text-slate-400">Loading...</p>
+                  </div>
+                ) : detectedUser ? (
+                  <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-4 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-body text-blue-400 font-medium">{detectedUser.full_name}</p>
+                        <p className="text-caption text-blue-400/70">{detectedUser.email}</p>
+                      </div>
+                      {violation.face_match_confidence !== null && violation.face_match_confidence !== undefined && (
+                        <div className="text-right">
+                          <p className="text-caption text-blue-400/70">Match Confidence</p>
+                          <p
+                            className={`text-body font-semibold ${
+                              violation.face_match_confidence >= 0.8
+                                ? 'text-green-400'
+                                : violation.face_match_confidence >= 0.6
+                                ? 'text-yellow-400'
+                                : 'text-red-400'
+                            }`}
+                          >
+                            {(violation.face_match_confidence * 100).toFixed(1)}%
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                    {violation.face_match_confidence !== null && violation.face_match_confidence !== undefined && (
+                      <div className="mt-2">
+                        <div className="w-full bg-slate-700 rounded-full h-2">
+                          <div
+                            className={`h-2 rounded-full transition-all ${
+                              violation.face_match_confidence >= 0.8
+                                ? 'bg-green-500'
+                                : violation.face_match_confidence >= 0.6
+                                ? 'bg-yellow-500'
+                                : 'bg-red-500'
+                            }`}
+                            style={{ width: `${violation.face_match_confidence * 100}%` }}
+                          />
+                        </div>
+                      </div>
+                    )}
+                    {onUserReassign && (
+                      <button
+                        onClick={() => setShowUserSelect(true)}
+                        className="w-full mt-2 px-3 py-1.5 bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 rounded text-sm transition-colors"
+                      >
+                        Reassign User
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <div className="bg-slate-800 rounded-lg p-4 text-center">
+                    <p className="text-caption text-slate-400">No user identified</p>
+                    <p className="text-caption text-slate-500 mt-1 text-xs">
+                      Face recognition did not find a match for this violation
+                    </p>
+                    {onUserReassign && (
+                      <button
+                        onClick={() => setShowUserSelect(true)}
+                        className="w-full mt-2 px-3 py-1.5 bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 rounded text-sm transition-colors"
+                      >
+                        Assign User Manually
+                      </button>
+                    )}
+                  </div>
+                )}
+                
+                {/* User Selection Dropdown */}
+                {showUserSelect && (
+                  <div className="mt-2 bg-slate-800 rounded-lg p-4 border border-slate-700">
+                    <p className="text-caption text-slate-400 mb-2">Select user:</p>
+                    <div className="space-y-1 max-h-40 overflow-y-auto">
+                      <button
+                        onClick={() => handleReassignUser(null)}
+                        className="w-full text-left px-3 py-2 hover:bg-slate-700 rounded text-sm text-slate-300"
+                      >
+                        Clear assignment
+                      </button>
+                      {allUsers.map((user) => (
+                        <button
+                          key={user.id}
+                          onClick={() => handleReassignUser(user.id)}
+                          className="w-full text-left px-3 py-2 hover:bg-slate-700 rounded text-sm text-slate-300"
+                        >
+                          {user.full_name} ({user.email})
+                        </button>
+                      ))}
+                    </div>
+                    <button
+                      onClick={() => setShowUserSelect(false)}
+                      className="w-full mt-2 px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded text-sm transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                )}
               </div>
 
               {/* Status */}

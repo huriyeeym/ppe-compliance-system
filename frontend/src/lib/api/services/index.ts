@@ -12,4 +12,6 @@ export { cameraService, type Camera } from './cameraService'
 export { detectionService, type DetectionResult } from './detectionService'
 export { authService, type User } from './authService'
 export { userService } from './userService'
+export { notificationService, type NotificationSettings, type NotificationSettingsUpdatePayload } from './notificationService'
+export * from './notificationScheduleService'
 
