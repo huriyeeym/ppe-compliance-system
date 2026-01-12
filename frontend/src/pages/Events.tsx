@@ -18,7 +18,9 @@ import {
   Eye,
   Edit,
   X,
-  AlertCircle
+  AlertCircle,
+  FileDown,
+  FileSpreadsheet
 } from 'lucide-react'
 import { violationService, type Violation, type ViolationFilters } from '../lib/api/services/violationService'
 import { domainService, type Domain } from '../lib/api/services/domainService'
@@ -28,7 +30,9 @@ import { useAuth } from '../context/AuthContext'
 import { canPerformAction, type UserRole } from '../lib/utils/permissions'
 import CustomSelect from '../components/common/CustomSelect'
 import PermissionGate from '../components/common/PermissionGate'
-import ViolationDetailModal from '../components/violations/ViolationDetailModal'
+import EventDetailModal from '../components/violations/EventDetailModal'
+import { exportViolationsToPDF, exportViolationsToExcel } from '../lib/utils/exportHelpers'
+import toast from 'react-hot-toast'
 
 type ViolationStatus = 'open' | 'in_progress' | 'closed' | 'false_positive'
 type ViolationSeverity = 'critical' | 'high' | 'medium' | 'low'
@@ -55,22 +59,37 @@ export default function Events() {
     end: '',
   })
 
+  const { user } = useAuth()
+
   // Load domains and cameras
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [domainList, cameraList] = await Promise.all([
-          domainService.getAll(),
-          cameraService.getAll(),
-        ])
-        setDomains(domainList)
-        setCameras(cameraList)
+        // Load organization-specific domains (should return only 4: Construction, Manufacturing, Mining, Warehouse)
+        if (user?.organization_id) {
+          const [domainList, cameraList] = await Promise.all([
+            domainService.getOrganizationDomains(user.organization_id),
+            cameraService.getAll(),
+          ])
+          setDomains(domainList)
+          setCameras(cameraList)
+        } else {
+          // Fallback: if no organization, use active domains
+          const [domainList, cameraList] = await Promise.all([
+            domainService.getActive(),
+            cameraService.getAll(),
+          ])
+          setDomains(domainList)
+          setCameras(cameraList)
+        }
       } catch (err) {
         logger.error('Failed to load domains/cameras', err)
       }
     }
-    loadData()
-  }, [])
+    if (user) {
+      loadData()
+    }
+  }, [user, user?.organization_id])
 
   // Load violations
   useEffect(() => {
@@ -222,15 +241,115 @@ export default function Events() {
               View, manage, and track PPE violation incidents
             </p>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-gray-600">
-              {(searchQuery || selectedLocation || selectedCameraId || dateRange.start || dateRange.end) && (
-                <>
-                  Showing: <span className="font-medium text-[#405189]">{filteredViolations.length}</span> of{' '}
-                </>
-              )}
-              Total: <span className="font-medium">{total}</span>
-            </span>
+          <div className="flex items-center gap-3">
+            {(searchQuery || selectedLocation || selectedCameraId || dateRange.start || dateRange.end) && (
+              <span className="text-sm text-gray-600">
+                Showing: <span className="font-medium text-[#405189]">{filteredViolations.length}</span> of{' '}
+                <span className="font-medium">{total}</span>
+              </span>
+            )}
+            <PermissionGate roles={['super_admin', 'admin', 'manager']}>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    try {
+                      const getPPEDisplayName = (type: string) => {
+                        const names: Record<string, string> = {
+                          hard_hat: 'Hard Hat',
+                          safety_vest: 'Safety Vest',
+                          gloves: 'Gloves',
+                          safety_boots: 'Safety Boots',
+                          safety_glasses: 'Safety Glasses',
+                        }
+                        return names[type] || type
+                      }
+
+                      const exportData = filteredViolations.map(v => {
+                        const camera = cameras.find(c => c.id === v.camera_id)
+                        return {
+                          id: v.id,
+                          timestamp: v.timestamp,
+                          camera_name: camera?.name || `Camera #${v.camera_id}`,
+                          camera_location: camera?.location || '-',
+                          missing_ppe: v.missing_ppe.map(p => getPPEDisplayName(p.type)),
+                          severity: v.severity,
+                          status: v.status || 'pending',
+                          confidence: v.confidence,
+                          assigned_to: v.assigned_to || '-',
+                          notes: v.notes || '-',
+                          corrective_action: v.corrective_action || '-',
+                        }
+                      })
+                      
+                      const dateRangeForExport = {
+                        start: dateRange.start || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+                        end: dateRange.end || new Date().toISOString().split('T')[0],
+                      }
+                      
+                      exportViolationsToPDF(exportData, {
+                        title: 'PPE Violation Events Report',
+                        dateRange: dateRangeForExport,
+                        companyName: 'PPE Compliance System',
+                      })
+                      toast.success('PDF downloaded successfully')
+                    } catch (err) {
+                      logger.error('PDF export failed', err)
+                      toast.error('Error creating PDF')
+                    }
+                  }}
+                  className="px-4 py-2 bg-[#F06548] hover:bg-[#F06548]/90 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+                >
+                  <FileDown className="h-4 w-4" />
+                  Download PDF
+                </button>
+                <button
+                  onClick={() => {
+                    try {
+                      const getPPEDisplayName = (type: string) => {
+                        const names: Record<string, string> = {
+                          hard_hat: 'Hard Hat',
+                          safety_vest: 'Safety Vest',
+                          gloves: 'Gloves',
+                          safety_boots: 'Safety Boots',
+                          safety_glasses: 'Safety Glasses',
+                        }
+                        return names[type] || type
+                      }
+
+                      const exportData = filteredViolations.map(v => {
+                        const camera = cameras.find(c => c.id === v.camera_id)
+                        return {
+                          id: v.id,
+                          timestamp: v.timestamp,
+                          camera_name: camera?.name || `Camera #${v.camera_id}`,
+                          camera_location: camera?.location || '-',
+                          missing_ppe: v.missing_ppe.map(p => getPPEDisplayName(p.type)),
+                          severity: v.severity,
+                          status: v.status || 'pending',
+                          confidence: v.confidence,
+                          assigned_to: v.assigned_to || '-',
+                          notes: v.notes || '-',
+                          corrective_action: v.corrective_action || '-',
+                        }
+                      })
+                      
+                      exportViolationsToExcel(exportData, {
+                        filename: `events-report-${new Date().toISOString().split('T')[0]}.xlsx`,
+                        sheetName: 'Events',
+                      })
+                      toast.success('Excel file downloaded successfully')
+                    } catch (err) {
+                      logger.error('Excel export failed', err)
+                      toast.error('Error creating Excel file')
+                    }
+                  }}
+                  className="px-4 py-2 bg-[#0AB39C] hover:bg-[#0AB39C]/90 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+                >
+                  <FileSpreadsheet className="h-4 w-4" />
+                  Export Excel
+                </button>
+              </div>
+            </PermissionGate>
           </div>
         </div>
       </div>
@@ -273,7 +392,7 @@ export default function Events() {
         </div>
 
         {/* Row 2: Dropdowns */}
-        <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
           <CustomSelect
             label="Domain"
             value={filters.domain_id || ''}
@@ -329,17 +448,6 @@ export default function Events() {
               { value: 'low', label: 'Low' }
             ]}
             placeholder="All Severities"
-          />
-          <CustomSelect
-            label="PPE Type"
-            value={filters.missing_ppe_type || ''}
-            onChange={(val) => setFilters({ ...filters, missing_ppe_type: val || undefined, skip: 0 })}
-            options={[
-              { value: '', label: 'All Types' },
-              { value: 'hard_hat', label: 'Hard Hat' },
-              { value: 'safety_vest', label: 'Safety Vest' }
-            ]}
-            placeholder="All Types"
           />
         </div>
       </div>
@@ -434,7 +542,7 @@ export default function Events() {
                           className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-[#405189] bg-[#405189]/10 rounded-lg hover:bg-[#405189]/20 transition-colors"
                         >
                           <Eye className="w-3.5 h-3.5" />
-                          View
+                          Details
                         </button>
                       </td>
                     </tr>
@@ -473,12 +581,15 @@ export default function Events() {
 
       {/* Detail Modal */}
       {selectedViolation && (
-        <ViolationDetailModal
+        <EventDetailModal
           violation={selectedViolation}
           onClose={() => setSelectedViolation(null)}
+          onUpdate={async (violationId: number, updates: any) => {
+            await handleUpdateViolation(violationId, updates)
+            await loadViolations()
+          }}
           onUserReassign={async (violationId: number, userId: number | null) => {
             await handleUpdateViolation(violationId, { detected_user_id: userId })
-            // Reload violations to get updated data
             await loadViolations()
           }}
         />

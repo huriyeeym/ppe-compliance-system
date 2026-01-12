@@ -3,10 +3,11 @@ CRUD (Create, Read, Update, Delete) operations for database models
 """
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_, update, delete
+from sqlalchemy import select, func, and_, update, delete, cast, String
 from sqlalchemy.orm import selectinload
 from typing import List, Optional
 from datetime import datetime
+import json
 
 from backend.database.models import (
     Domain, PPEType, DomainPPERule, Camera, Violation, DetectionLog, User, user_domains, Organization, organization_domains
@@ -345,9 +346,12 @@ async def get_violations(
         conditions.append(Violation.severity == filters.severity)
     if filters.missing_ppe_type:
         # Filter by missing PPE type (search in JSON field)
-        # SQLite JSON search: missing_ppe JSON array contains {"type": "hard_hat"}
+        # SQLite JSON search: Check if JSON array contains an object with matching type
+        # Use text search pattern that matches JSON structure: "type":"hard_hat"
+        # This is more reliable than contains() for SQLite JSON
+        search_pattern = f'"type":"{filters.missing_ppe_type}"'
         conditions.append(
-            Violation.missing_ppe.contains([{"type": filters.missing_ppe_type}])
+            cast(Violation.missing_ppe, String).like(f'%{search_pattern}%')
         )
     if filters.start_date:
         conditions.append(Violation.timestamp >= filters.start_date)

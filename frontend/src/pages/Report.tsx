@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from 'react'
-import { FileDown, FileSpreadsheet, AlertTriangle, Check, Clock, X, FileText } from 'lucide-react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
+import { FileDown, FileSpreadsheet, AlertTriangle, Check, Clock, X, FileText, Search, ArrowUp, ArrowDown } from 'lucide-react'
 import { violationService, type Violation, type ViolationFilters } from '../lib/api/services'
 import { domainService } from '../lib/api/services'
 import { logger } from '../lib/utils/logger'
@@ -47,7 +47,6 @@ export default function Report() {
   
   const [dateRange, setDateRange] = useState(getDefaultDateRange())
   const [selectedSeverity, setSelectedSeverity] = useState<string>('all')
-  const [selectedPPE, setSelectedPPE] = useState<string>('all')
   const [selectedViolation, setSelectedViolation] = useState<Violation | null>(null)
 
   const handleUserReassign = async (violationId: number, userId: number | null) => {
@@ -69,8 +68,11 @@ export default function Report() {
   const [error, setError] = useState<string | null>(null)
   const [selectedDomainId, setSelectedDomainId] = useState<number | null>(null)
   const [domains, setDomains] = useState<Array<{ id: number; name: string; type: string }>>([])
-  const [pagination, setPagination] = useState({ skip: 0, limit: 50 })
+  const [pagination, setPagination] = useState({ skip: 0, limit: 20 })
   const [totalViolations, setTotalViolations] = useState(0)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [sortBy, setSortBy] = useState<string>('timestamp') // 'timestamp', 'severity', 'camera_id', 'status'
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
 
   // Ensure end date is always set to today when component mounts or when it's not set
   useEffect(() => {
@@ -143,10 +145,6 @@ export default function Report() {
         filters.severity = selectedSeverity as 'critical' | 'high' | 'medium' | 'low'
       }
 
-      if (selectedPPE !== 'all') {
-        filters.missing_ppe_type = selectedPPE
-      }
-
       if (dateRange.from) {
         filters.start_date = new Date(dateRange.from).toISOString()
       }
@@ -157,7 +155,7 @@ export default function Report() {
         filters.end_date = endDate.toISOString()
       }
 
-      logger.debug('Loading violations with filters', filters)
+      logger.debug('Loading violations with filters', { filters })
       const response = await violationService.getAll(filters)
       setViolations(response.items)
       setTotalViolations(response.total)
@@ -168,7 +166,7 @@ export default function Report() {
     } finally {
       setLoading(false)
     }
-  }, [dateRange, selectedSeverity, selectedPPE, selectedDomainId])
+  }, [dateRange, selectedSeverity, selectedDomainId])
 
   useEffect(() => {
     loadViolations()
@@ -185,6 +183,56 @@ export default function Report() {
     }
     return names[type] || type
   }
+
+  // Filter and sort violations client-side
+  const filteredViolations = useMemo(() => {
+    let filtered = [...violations]
+
+    // Search filter
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase()
+      filtered = filtered.filter(v => {
+        const cameraText = `Camera #${v.camera_id}`.toLowerCase()
+        const missingPPEText = v.missing_ppe.map(p => getPPEDisplayName(p.type)).join(' ').toLowerCase()
+        const detectedPPEText = v.detected_ppe.map(p => getPPEDisplayName(p.type)).join(' ').toLowerCase()
+        const severityText = v.severity.toLowerCase()
+        const statusText = (v.acknowledged ? 'acknowledged' : 'pending').toLowerCase()
+        
+        return cameraText.includes(query) ||
+               missingPPEText.includes(query) ||
+               detectedPPEText.includes(query) ||
+               severityText.includes(query) ||
+               statusText.includes(query)
+      })
+    }
+
+    // Sort
+    filtered.sort((a, b) => {
+      let comparison = 0
+      switch (sortBy) {
+        case 'timestamp':
+          comparison = new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+          break
+        case 'severity':
+          const severityOrder = { critical: 4, high: 3, medium: 2, low: 1 }
+          comparison = (severityOrder[a.severity] || 0) - (severityOrder[b.severity] || 0)
+          break
+        case 'camera_id':
+          comparison = a.camera_id - b.camera_id
+          break
+        case 'status':
+          const aStatus = a.acknowledged ? 'acknowledged' : 'pending'
+          const bStatus = b.acknowledged ? 'acknowledged' : 'pending'
+          comparison = aStatus.localeCompare(bStatus)
+          break
+        default:
+          comparison = 0
+      }
+      return sortOrder === 'asc' ? comparison : -comparison
+    })
+
+    return filtered
+  }, [violations, searchQuery, sortBy, sortOrder])
 
   const formatDateTime = (timestamp: string) => {
     const date = new Date(timestamp)
@@ -326,67 +374,105 @@ export default function Report() {
 
       {/* Filters */}
       <div className="card">
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Domain</label>
-            <CustomSelect
-              value={selectedDomainId?.toString() || 'all'}
-              onChange={(val) => {
-                try {
-                  setSelectedDomainId(val === 'all' || val === '' ? null : Number(val))
-                } catch (err) {
-                  logger.error('Error changing domain', err)
-                  setError('Failed to change domain')
-                }
-              }}
-              options={[
-                { value: 'all', label: 'All Domains' },
-                ...domains.map(d => ({ value: d.id.toString(), label: d.name }))
-              ]}
-            />
+        <div className="space-y-4">
+          {/* Top Row: Search, Start Date, End Date */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Search */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Search</label>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="Search by camera, PPE, severity, status..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-10 pr-3 py-2 bg-white border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#405189]/20 focus:border-[#405189]"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Start Date</label>
+              <input
+                type="date"
+                value={dateRange.from}
+                onChange={(e) => setDateRange({ ...dateRange, from: e.target.value })}
+                className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#405189]/20 focus:border-[#405189] transition-all"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">End Date</label>
+              <input
+                type="date"
+                value={dateRange.to}
+                max={new Date().toISOString().split('T')[0]} // Prevent selecting future dates
+                onChange={(e) => setDateRange({ ...dateRange, to: e.target.value })}
+                className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#405189]/20 focus:border-[#405189] transition-all"
+              />
+            </div>
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
-            <input
-              type="date"
-              value={dateRange.from}
-              onChange={(e) => setDateRange({ ...dateRange, from: e.target.value })}
-              className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#405189]/20 focus:border-[#405189] transition-all"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">End Date</label>
-            <input
-              type="date"
-              value={dateRange.to}
-              max={new Date().toISOString().split('T')[0]} // Prevent selecting future dates
-              onChange={(e) => setDateRange({ ...dateRange, to: e.target.value })}
-              className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#405189]/20 focus:border-[#405189] transition-all"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Missing PPE</label>
-            <CustomSelect
-              value={selectedPPE}
-              onChange={(val) => setSelectedPPE(String(val))}
-              options={[
-                { value: 'all', label: 'All' },
-                { value: 'hard_hat', label: 'Hard Hat' },
-                { value: 'safety_vest', label: 'Safety Vest' }
-              ]}
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Severity</label>
-            <CustomSelect
-              value={selectedSeverity}
-              onChange={(val) => setSelectedSeverity(String(val))}
-              options={[
-                { value: 'all', label: 'All' },
-                { value: 'critical', label: 'Critical' },
-                { value: 'high', label: 'High' }
-              ]}
-            />
+          
+          {/* Bottom Row: Sort By, Domain, Severity */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2 border-t border-gray-200">
+            {/* Sort By */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Sort By</label>
+              <div className="flex gap-2">
+                <div className="flex-1">
+                  <CustomSelect
+                    value={sortBy}
+                    onChange={(val) => setSortBy(String(val))}
+                    options={[
+                      { value: 'timestamp', label: 'Date' },
+                      { value: 'severity', label: 'Severity' },
+                      { value: 'camera_id', label: 'Camera' },
+                      { value: 'status', label: 'Status' }
+                    ]}
+                  />
+                </div>
+                <button
+                  onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
+                  className={`px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium transition-all hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#405189]/20 focus:border-[#405189] flex items-center justify-center min-w-[44px] ${
+                    sortOrder === 'asc' ? 'text-[#405189] border-[#405189]' : 'text-gray-700'
+                  }`}
+                  title={sortOrder === 'asc' ? 'Ascending' : 'Descending'}
+                >
+                  {sortOrder === 'asc' ? <ArrowUp className="w-4 h-4" /> : <ArrowDown className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Domain</label>
+              <CustomSelect
+                value={selectedDomainId?.toString() || 'all'}
+                onChange={(val) => {
+                  try {
+                    setSelectedDomainId(val === 'all' || val === '' ? null : Number(val))
+                  } catch (err) {
+                    logger.error('Error changing domain', err)
+                    setError('Failed to change domain')
+                  }
+                }}
+                options={[
+                  { value: 'all', label: 'All Domains' },
+                  ...domains.map(d => ({ value: d.id.toString(), label: d.name }))
+                ]}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Severity</label>
+              <CustomSelect
+                value={selectedSeverity}
+                onChange={(val) => setSelectedSeverity(String(val))}
+                options={[
+                  { value: 'all', label: 'All' },
+                  { value: 'critical', label: 'Critical' },
+                  { value: 'high', label: 'High' },
+                  { value: 'medium', label: 'Medium' },
+                  { value: 'low', label: 'Low' }
+                ]}
+              />
+            </div>
           </div>
         </div>
       </div>
@@ -407,14 +493,14 @@ export default function Report() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
-              {violations.length === 0 ? (
+              {filteredViolations.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="px-6 py-12 text-center text-gray-500">
                     No violations found
                   </td>
                 </tr>
               ) : (
-                violations.map((violation, index) => (
+                filteredViolations.map((violation, index) => (
                   <tr
                     key={violation.id}
                     className={`

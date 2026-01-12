@@ -1,12 +1,13 @@
-import { useState, useEffect, useCallback } from 'react'
-import { Volume2, VolumeX, Play, Pause, Construction, Factory, Warehouse, Pickaxe, Cross, UtensilsCrossed, Building2, XCircle, Video, Grid3x3, Grid2x2 } from 'lucide-react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
+import { Volume2, VolumeX, Play, Pause, Construction, Factory, Warehouse, Pickaxe, Cross, UtensilsCrossed, Building2, XCircle, Webcam, Grid3x3, Grid2x2, List, LayoutGrid, Search } from 'lucide-react'
 import LiveVideoStream from '../components/dashboard/LiveVideoStream'
 import { domainService, type Domain } from '../lib/api/services/domainService'
 import { cameraService, type Camera } from '../lib/api/services/cameraService'
-import { useDomain } from '../context/DomainContext'
+import { useAuth } from '../context/AuthContext'
 import { logger } from '../lib/utils/logger'
 import { showViolationAlert, showSuccessAlert } from '../components/alerts/ViolationAlert'
 import { audioAlert } from '../lib/utils/audioAlert'
+import MultiSelect from '../components/common/MultiSelect'
 
 // Helper function to get domain icon by type
 function getDomainIcon(domainType: string): React.ReactElement {
@@ -36,17 +37,20 @@ interface CameraStreamState {
 }
 
 type GridLayout = '1x1' | '2x2' | '3x3' | '4x4'
+type ViewMode = 'grid' | 'list'
 
 /**
  * Live Camera Page - Multi-Camera View
  *
- * Supports multiple domains and cameras:
- * - Select multiple domains
- * - Display all cameras from selected domains
- * - Each camera has independent streaming and detection
- * - Grid layout for camera display
+ * Professional redesign with:
+ * - Organization-based domain/camera loading
+ * - Multi-select domain dropdown
+ * - Show all cameras, filter by selected domains
+ * - Grid and list view options
+ * - Start All Visible functionality
  */
 export default function LiveCamera() {
+  const { user } = useAuth()
   const [selectedDomainIds, setSelectedDomainIds] = useState<number[]>([])
   const [domains, setDomains] = useState<Domain[]>([])
   const [cameras, setCameras] = useState<Camera[]>([])
@@ -55,36 +59,50 @@ export default function LiveCamera() {
   const [error, setError] = useState<string | null>(null)
   const [isMuted, setIsMuted] = useState(false)
   const [gridLayout, setGridLayout] = useState<GridLayout>('2x2')
+  const [viewMode, setViewMode] = useState<ViewMode>('grid')
+  const [searchQuery, setSearchQuery] = useState<string>('')
 
-  // Load domains and cameras - use DomainContext for user's domains
-  const { domains: userDomains } = useDomain()
-  
+  // Load domains and cameras based on user's organization
   useEffect(() => {
     const loadData = async () => {
+      if (!user) {
+        setLoading(false)
+        return
+      }
+
       try {
         setLoading(true)
-        // Use user's domains from DomainContext (already filtered)
-        const domainsList = userDomains.length > 0 ? userDomains : await domainService.getActive()
+        setError(null)
+
+        // Load organization domains (same as Report/Events pages)
+        let domainsList: Domain[] = []
+        if (user.organization_id) {
+          domainsList = await domainService.getOrganizationDomains(user.organization_id)
+          logger.info(`LiveCamera: Loaded ${domainsList.length} organization domains`, {
+            organization_id: user.organization_id,
+            domains: domainsList.map(d => ({ id: d.id, name: d.name, type: d.type }))
+          })
+        } else {
+          // Fallback: Load active domains
+          domainsList = await domainService.getActive()
+        }
         setDomains(domainsList)
 
-        // Load all cameras for user's domains only
+        // Load all cameras from organization domains
         const allCameras: Camera[] = []
         for (const domain of domainsList) {
-          const domainCameras = await cameraService.getAll(domain.id)
-          allCameras.push(...domainCameras)
+          try {
+            const domainCameras = await cameraService.getAll(domain.id)
+            allCameras.push(...domainCameras.filter(c => c.is_active))
+          } catch (err) {
+            logger.error(`Failed to load cameras for domain ${domain.id}`, err)
+          }
         }
         setCameras(allCameras)
 
-        // Auto-select first domain if none selected
+        // Auto-select all domains by default
         if (selectedDomainIds.length === 0 && domainsList.length > 0) {
-          const savedDomainId = localStorage.getItem('selectedDomainId')
-          const initialDomainId = savedDomainId
-            ? domainsList.find(d => d.id === parseInt(savedDomainId))?.id
-            : domainsList[0]?.id
-          
-          if (initialDomainId) {
-            setSelectedDomainIds([initialDomainId])
-          }
+          setSelectedDomainIds(domainsList.map(d => d.id))
         }
       } catch (err) {
         logger.error('LiveCamera data load error', err)
@@ -94,22 +112,35 @@ export default function LiveCamera() {
       }
     }
     loadData()
-  }, [userDomains])
+  }, [user, user?.organization_id])
 
-  // Update camera streams when domain selection changes
-  useEffect(() => {
-    if (selectedDomainIds.length === 0) {
-      setCameraStreams(new Map())
-      return
+  // Filter cameras based on selected domains and search query
+  const filteredCameras = useMemo(() => {
+    let filtered = cameras
+
+    // Filter by domain
+    if (selectedDomainIds.length > 0) {
+      filtered = filtered.filter(c => selectedDomainIds.includes(c.domain_id))
     }
 
-    const selectedCameras = cameras.filter(c => 
-      selectedDomainIds.includes(c.domain_id) && c.is_active
-    )
+    // Filter by search query
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase().trim()
+      filtered = filtered.filter(c => 
+        c.name.toLowerCase().includes(query) ||
+        c.location?.toLowerCase().includes(query) ||
+        domains.find(d => d.id === c.domain_id)?.name.toLowerCase().includes(query)
+      )
+    }
 
+    return filtered
+  }, [cameras, selectedDomainIds, searchQuery, domains])
+
+  // Initialize camera streams for filtered cameras
+  useEffect(() => {
     const newStreams = new Map<number, CameraStreamState>()
     
-    selectedCameras.forEach(camera => {
+    filteredCameras.forEach(camera => {
       const domain = domains.find(d => d.id === camera.domain_id)
       if (domain) {
         // Keep existing state if camera already exists, otherwise create new
@@ -130,18 +161,20 @@ export default function LiveCamera() {
       }
     })
 
-    // Remove streams for cameras that are no longer selected
+    // Remove streams for cameras that are no longer in filtered list
     cameraStreams.forEach((state, cameraId) => {
-      if (!selectedCameras.find(c => c.id === cameraId)) {
-        // Stop streaming if camera is removed
-        if (state.isStreaming) {
-          // Stream will be stopped by LiveVideoStream component cleanup
+      if (!filteredCameras.find(c => c.id === cameraId)) {
+        // Stream will be stopped by LiveVideoStream component cleanup
+      } else {
+        // Keep existing stream state
+        if (!newStreams.has(cameraId)) {
+          newStreams.set(cameraId, state)
         }
       }
     })
 
     setCameraStreams(newStreams)
-  }, [selectedDomainIds, cameras, domains])
+  }, [filteredCameras, domains])
 
   const handleDetectionComplete = useCallback((cameraId: number) => async (result: {
     detections: Array<{
@@ -281,12 +314,15 @@ export default function LiveCamera() {
     })
   }
 
-  const toggleAllStreams = () => {
-    const allStreaming = Array.from(cameraStreams.values()).every(s => s.isStreaming)
+  // Start/Stop all VISIBLE cameras only
+  const toggleAllVisibleStreams = () => {
+    const visibleStreams = Array.from(cameraStreams.values())
+    const allStreaming = visibleStreams.length > 0 && visibleStreams.every(s => s.isStreaming)
+    
     setCameraStreams(prev => {
       const updated = new Map(prev)
-      prev.forEach((state, cameraId) => {
-        updated.set(cameraId, {
+      visibleStreams.forEach((state) => {
+        updated.set(state.camera.id, {
           ...state,
           isStreaming: !allStreaming
         })
@@ -305,13 +341,26 @@ export default function LiveCamera() {
     }
   }
 
+  const visibleCameras = Array.from(cameraStreams.values())
+  const allStreaming = visibleCameras.length > 0 && visibleCameras.every(s => s.isStreaming)
+
+  const totalStats = visibleCameras.reduce((acc, stream) => {
+    return {
+      totalDetections: acc.totalDetections + stream.detectionStats.totalDetections,
+      compliant: acc.compliant + stream.detectionStats.compliant,
+      violations: acc.violations + stream.detectionStats.violations,
+      hardHatMissing: acc.hardHatMissing + stream.detectionStats.hardHatMissing,
+      vestMissing: acc.vestMissing + stream.detectionStats.vestMissing,
+    }
+  }, { totalDetections: 0, compliant: 0, violations: 0, hardHatMissing: 0, vestMissing: 0 })
+
   if (loading) {
     return (
       <div className="p-6">
         <div className="card">
           <div className="text-center py-12">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#405189] mx-auto mb-4"></div>
-            <p className="text-body text-gray-500">Loading...</p>
+            <p className="text-body text-gray-500">Loading cameras...</p>
           </div>
         </div>
       </div>
@@ -338,16 +387,10 @@ export default function LiveCamera() {
     )
   }
 
-  const selectedCameras = Array.from(cameraStreams.values())
-  const totalStats = selectedCameras.reduce((acc, stream) => {
-    return {
-      totalDetections: acc.totalDetections + stream.detectionStats.totalDetections,
-      compliant: acc.compliant + stream.detectionStats.compliant,
-      violations: acc.violations + stream.detectionStats.violations,
-      hardHatMissing: acc.hardHatMissing + stream.detectionStats.hardHatMissing,
-      vestMissing: acc.vestMissing + stream.detectionStats.vestMissing,
-    }
-  }, { totalDetections: 0, compliant: 0, violations: 0, hardHatMissing: 0, vestMissing: 0 })
+  const domainOptions = domains.map(d => ({
+    value: d.id,
+    label: d.name
+  }))
 
   return (
     <div className="p-6 space-y-6">
@@ -356,211 +399,195 @@ export default function LiveCamera() {
         <div className="flex items-center justify-between flex-wrap gap-4">
           <div>
             <h1 className="text-page-title flex items-center gap-2">
-              <Video className="w-7 h-7 text-[#405189]" />
+              <Webcam className="w-7 h-7 text-[#405189]" />
               Live Camera Monitoring
             </h1>
             <p className="text-caption text-gray-600 mt-1">
               Real-time video streams with PPE detection
-              {selectedCameras.length > 0 && (
-                <> - {selectedCameras.length} camera{selectedCameras.length !== 1 ? 's' : ''} from {selectedDomainIds.length} domain{selectedDomainIds.length !== 1 ? 's' : ''}</>
+              {visibleCameras.length > 0 && (
+                <> - {visibleCameras.length} camera{visibleCameras.length !== 1 ? 's' : ''} visible</>
               )}
             </p>
           </div>
           <div className="flex gap-3 flex-wrap">
-          <button
-            onClick={() => {
-              const newMuted = audioAlert.toggleMute()
-              setIsMuted(newMuted)
-              showSuccessAlert(newMuted ? 'Audio alerts disabled' : 'Audio alerts enabled')
-            }}
-            className="btn-secondary flex items-center gap-2"
-            title={isMuted ? 'Enable Sound' : 'Disable Sound'}
-          >
-            {isMuted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
-            <span className="hidden sm:inline">{isMuted ? 'Off' : 'On'}</span>
-          </button>
-          <div className="flex gap-2 border border-gray-300 rounded-md overflow-hidden">
             <button
-              onClick={() => setGridLayout('1x1')}
-              className={`px-3 py-2 text-sm ${gridLayout === '1x1' ? 'bg-[#405189] text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}
-              title="1 Column"
-            >
-              <Grid2x2 className="h-4 w-4" />
-            </button>
-            <button
-              onClick={() => setGridLayout('2x2')}
-              className={`px-3 py-2 text-sm ${gridLayout === '2x2' ? 'bg-[#405189] text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}
-              title="2 Columns"
-            >
-              <Grid2x2 className="h-4 w-4" />
-            </button>
-            <button
-              onClick={() => setGridLayout('3x3')}
-              className={`px-3 py-2 text-sm ${gridLayout === '3x3' ? 'bg-[#405189] text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}
-              title="3 Columns"
-            >
-              <Grid3x3 className="h-4 w-4" />
-            </button>
-            <button
-              onClick={() => setGridLayout('4x4')}
-              className={`px-3 py-2 text-sm ${gridLayout === '4x4' ? 'bg-[#405189] text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}
-              title="4 Columns"
-            >
-              <Grid3x3 className="h-4 w-4" />
-            </button>
-          </div>
-          {selectedCameras.length > 0 && (
-            <button
-              onClick={toggleAllStreams}
+              onClick={() => {
+                const newMuted = audioAlert.toggleMute()
+                setIsMuted(newMuted)
+                showSuccessAlert(newMuted ? 'Audio alerts disabled' : 'Audio alerts enabled')
+              }}
               className="btn-secondary flex items-center gap-2"
+              title={isMuted ? 'Enable Sound' : 'Disable Sound'}
             >
-              {Array.from(cameraStreams.values()).every(s => s.isStreaming) ? (
-                <>
-                  <Pause className="h-4 w-4" />
-                  <span>Stop All</span>
-                </>
-              ) : (
-                <>
-                  <Play className="h-4 w-4" />
-                  <span>Start All</span>
-                </>
-              )}
+              {isMuted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+              <span className="hidden sm:inline">{isMuted ? 'Off' : 'On'}</span>
             </button>
-          )}
           </div>
         </div>
       </div>
 
-      {/* Domain Selection */}
+      {/* Unified Control Panel */}
       <div className="card p-4">
-        <label className="block text-sm font-medium text-gray-700 mb-2">
-          Select Domains (Multiple Selection)
-        </label>
-        <div className="flex flex-wrap gap-2">
-          {domains.map(domain => {
-            const isSelected = selectedDomainIds.includes(domain.id)
-            return (
-              <button
-                key={domain.id}
-                onClick={() => {
-                  if (isSelected) {
-                    setSelectedDomainIds(prev => prev.filter(id => id !== domain.id))
-                  } else {
-                    setSelectedDomainIds(prev => [...prev, domain.id])
-                  }
-                }}
-                className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${
-                  isSelected
-                    ? 'bg-[#405189] text-white'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                  {getDomainIcon(domain.type)}
-                  <span>{domain.name}</span>
+        <div className="flex items-center gap-4">
+          {/* Search */}
+          <div className="flex-1 min-w-0">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search cameras..."
+                className="w-full h-10 pl-10 pr-3 bg-white border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#405189]/20 focus:border-[#405189] transition-all"
+              />
+            </div>
+          </div>
+
+          {/* Domain Filter */}
+          <div className="flex-shrink-0" style={{ width: '400px' }}>
+            <MultiSelect
+              value={selectedDomainIds}
+              onChange={(values) => setSelectedDomainIds(values as number[])}
+              options={domainOptions}
+              placeholder="Filter by Domain"
+            />
+          </div>
+
+          {/* View Mode Toggle */}
+          <div className="flex gap-0 border border-gray-300 rounded-lg overflow-hidden h-10 flex-shrink-0">
+            <button
+              onClick={() => setViewMode('grid')}
+              className={`px-4 h-10 flex items-center gap-2 text-sm font-medium transition-colors ${
+                viewMode === 'grid'
+                  ? 'bg-[#405189] text-white'
+                  : 'bg-white text-gray-700 hover:bg-gray-50'
+              }`}
+              title="Grid View"
+            >
+              <LayoutGrid className="h-4 w-4" />
+              <span>Grid</span>
+            </button>
+            <button
+              onClick={() => setViewMode('list')}
+              className={`px-4 h-10 flex items-center gap-2 text-sm font-medium transition-colors border-l border-gray-300 ${
+                viewMode === 'list'
+                  ? 'bg-[#405189] text-white'
+                  : 'bg-white text-gray-700 hover:bg-gray-50'
+              }`}
+              title="List View"
+            >
+              <List className="h-4 w-4" />
+              <span>List</span>
+            </button>
+          </div>
+
+          {/* Grid Layout (only in grid view) */}
+          {viewMode === 'grid' && (
+            <div className="flex gap-0 border border-gray-300 rounded-lg overflow-hidden h-10 flex-shrink-0">
+                <button
+                  onClick={() => setGridLayout('1x1')}
+                  className={`px-3 h-10 flex items-center justify-center transition-colors ${
+                    gridLayout === '1x1' ? 'bg-[#405189] text-white' : 'bg-white text-gray-700 hover:bg-gray-50'
+                  }`}
+                  title="1 Column"
+                >
+                  <Grid2x2 className="h-4 w-4" />
+                </button>
+                <button
+                  onClick={() => setGridLayout('2x2')}
+                  className={`px-3 h-10 flex items-center justify-center transition-colors border-l border-gray-300 ${
+                    gridLayout === '2x2' ? 'bg-[#405189] text-white' : 'bg-white text-gray-700 hover:bg-gray-50'
+                  }`}
+                  title="2 Columns"
+                >
+                  <Grid2x2 className="h-4 w-4" />
+                </button>
+                <button
+                  onClick={() => setGridLayout('3x3')}
+                  className={`px-3 h-10 flex items-center justify-center transition-colors border-l border-gray-300 ${
+                    gridLayout === '3x3' ? 'bg-[#405189] text-white' : 'bg-white text-gray-700 hover:bg-gray-50'
+                  }`}
+                  title="3 Columns"
+                >
+                  <Grid3x3 className="h-4 w-4" />
+                </button>
+                <button
+                  onClick={() => setGridLayout('4x4')}
+                  className={`px-3 h-10 flex items-center justify-center transition-colors border-l border-gray-300 ${
+                    gridLayout === '4x4' ? 'bg-[#405189] text-white' : 'bg-white text-gray-700 hover:bg-gray-50'
+                  }`}
+                  title="4 Columns"
+                >
+                  <Grid3x3 className="h-4 w-4" />
+                  </button>
                 </div>
+          )}
+
+          {/* Start All Visible Button */}
+          {visibleCameras.length > 0 && (
+            <button
+                onClick={toggleAllVisibleStreams}
+                className="btn-primary h-10 px-4 flex items-center gap-2 flex-shrink-0"
+                title="Start/Stop all visible cameras"
+              >
+                {allStreaming ? (
+                  <>
+                    <Pause className="h-4 w-4" />
+                    <span>Stop All Visible</span>
+                  </>
+                ) : (
+                  <>
+                    <Play className="h-4 w-4" />
+                    <span>Start All Visible</span>
+                  </>
+                )}
               </button>
-            )
-          })}
+          )}
         </div>
       </div>
 
-      {/* Camera Grid */}
-      {selectedCameras.length === 0 ? (
+      {/* Camera Display */}
+      {visibleCameras.length === 0 ? (
         <div className="card p-12 text-center">
-          <Video className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-          <h3 className="text-lg font-semibold text-gray-700 mb-2">No Cameras Selected</h3>
+          <Webcam className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+          <h3 className="text-lg font-semibold text-gray-700 mb-2">No Cameras Available</h3>
           <p className="text-gray-500">
-            Select one or more domains above to view their cameras.
+            {cameras.length === 0
+              ? 'No active cameras found in your organization.'
+              : 'No cameras match the selected domain filter. Try selecting different domains.'}
           </p>
         </div>
       ) : (
         <>
-          <div className={`grid ${getGridCols()} gap-4`}>
-            {selectedCameras.map(streamState => (
-              <div key={streamState.camera.id} className="card p-4 space-y-4">
-                {/* Camera Header */}
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    {getDomainIcon(streamState.domain.type)}
-                    <div>
-                      <h3 className="font-semibold text-gray-900">{streamState.camera.name}</h3>
-                      <p className="text-xs text-gray-500">
-                        {streamState.domain.name} {streamState.camera.location ? `• ${streamState.camera.location}` : ''}
-                      </p>
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => toggleCameraStream(streamState.camera.id)}
-                    className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
-                      streamState.isStreaming
-                        ? 'bg-[#F06548] hover:bg-[#e04d35] text-white'
-                        : 'bg-[#0AB39C] hover:bg-[#089981] text-white'
-                    }`}
-                  >
-                    {streamState.isStreaming ? (
-                      <>
-                        <Pause className="h-3 w-3" />
-                        <span>Stop</span>
-                      </>
-                    ) : (
-                      <>
-                        <Play className="h-3 w-3" />
-                        <span>Start</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-
-                {/* Video Stream */}
-                <div className="relative bg-black rounded-lg overflow-hidden" style={{ aspectRatio: '16/9' }}>
-                  <LiveVideoStream
-                    cameraId={streamState.camera.id}
-                    isStreaming={streamState.isStreaming}
-                    domainId={streamState.domain.type}
-                    domainIdNumber={streamState.domain.id}
-                    cameraSourceUri={streamState.camera.source_uri}
-                    cameraSourceType={streamState.camera.source_type}
-                    onDetectionComplete={handleDetectionComplete(streamState.camera.id)}
-                  />
-                </div>
-
-                {/* Camera Stats */}
-                <div className="grid grid-cols-4 gap-2 text-center">
-                  <div>
-                    <div className="text-lg font-bold text-[#405189]">
-                      {streamState.detectionStats.totalDetections}
-                    </div>
-                    <div className="text-xs text-gray-500">Persons</div>
-                  </div>
-                  <div>
-                    <div className="text-lg font-bold text-[#0AB39C]">
-                      {streamState.detectionStats.compliant}
-                    </div>
-                    <div className="text-xs text-gray-500">Compliant</div>
-                  </div>
-                  <div>
-                    <div className="text-lg font-bold text-[#F06548]">
-                      {streamState.detectionStats.violations}
-                    </div>
-                    <div className="text-xs text-gray-500">Violations</div>
-                  </div>
-                  <div>
-                    <div className="text-lg font-bold text-[#F7B84B]">
-                      {streamState.detectionStats.hardHatMissing + streamState.detectionStats.vestMissing}
-                    </div>
-                    <div className="text-xs text-gray-500">Missing PPE</div>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
+          {viewMode === 'grid' ? (
+            <div className={`grid ${getGridCols()} gap-4`}>
+              {visibleCameras.map(streamState => (
+                <CameraCard
+                  key={streamState.camera.id}
+                  streamState={streamState}
+                  onToggleStream={toggleCameraStream}
+                  onDetectionComplete={handleDetectionComplete}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {visibleCameras.map(streamState => (
+                <CameraCardList
+                  key={streamState.camera.id}
+                  streamState={streamState}
+                  onToggleStream={toggleCameraStream}
+                  onDetectionComplete={handleDetectionComplete}
+                />
+              ))}
+            </div>
+          )}
 
           {/* Total Stats */}
-          {selectedCameras.length > 1 && (
+          {visibleCameras.length > 1 && (
             <div className="card p-4">
-              <h3 className="text-sm font-semibold text-gray-700 mb-3">Total Statistics (All Cameras)</h3>
-              <div className="grid grid-cols-4 gap-4 text-center">
+              <h3 className="text-sm font-semibold text-gray-700 mb-3">Total Statistics (All Visible Cameras)</h3>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
                 <div>
                   <div className="text-2xl font-bold text-[#405189]">
                     {totalStats.totalDetections}
@@ -590,6 +617,190 @@ export default function LiveCamera() {
           )}
         </>
       )}
+    </div>
+  )
+}
+
+// Camera Card Component for Grid View
+function CameraCard({
+  streamState,
+  onToggleStream,
+  onDetectionComplete
+}: {
+  streamState: CameraStreamState
+  onToggleStream: (cameraId: number) => void
+  onDetectionComplete: (cameraId: number) => (result: any) => Promise<void>
+}) {
+  return (
+    <div className="card p-4 space-y-4">
+      {/* Camera Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          {getDomainIcon(streamState.domain.type)}
+          <div>
+            <h3 className="font-semibold text-gray-900">{streamState.camera.name}</h3>
+            <p className="text-xs text-gray-500">
+              {streamState.domain.name} {streamState.camera.location ? `• ${streamState.camera.location}` : ''}
+            </p>
+          </div>
+        </div>
+        <button
+          onClick={() => onToggleStream(streamState.camera.id)}
+          className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
+            streamState.isStreaming
+              ? 'bg-[#F06548] hover:bg-[#e04d35] text-white'
+              : 'bg-[#0AB39C] hover:bg-[#089981] text-white'
+          }`}
+        >
+          {streamState.isStreaming ? (
+            <>
+              <Pause className="h-3 w-3" />
+              <span>Stop</span>
+            </>
+          ) : (
+            <>
+              <Play className="h-3 w-3" />
+              <span>Start</span>
+            </>
+          )}
+        </button>
+      </div>
+
+      {/* Video Stream */}
+      <LiveVideoStream
+        cameraId={streamState.camera.id}
+        isStreaming={streamState.isStreaming}
+        domainId={streamState.domain.type}
+        domainIdNumber={streamState.domain.id}
+        cameraSourceUri={streamState.camera.source_uri}
+        cameraSourceType={streamState.camera.source_type}
+        onDetectionComplete={onDetectionComplete(streamState.camera.id)}
+        noCard={true}
+      />
+
+      {/* Camera Stats */}
+      <div className="grid grid-cols-4 gap-2 text-center">
+        <div>
+          <div className="text-lg font-bold text-[#405189]">
+            {streamState.detectionStats.totalDetections}
+          </div>
+          <div className="text-xs text-gray-500">Persons</div>
+        </div>
+        <div>
+          <div className="text-lg font-bold text-[#0AB39C]">
+            {streamState.detectionStats.compliant}
+          </div>
+          <div className="text-xs text-gray-500">Compliant</div>
+        </div>
+        <div>
+          <div className="text-lg font-bold text-[#F06548]">
+            {streamState.detectionStats.violations}
+          </div>
+          <div className="text-xs text-gray-500">Violations</div>
+        </div>
+        <div>
+          <div className="text-lg font-bold text-[#F7B84B]">
+            {streamState.detectionStats.hardHatMissing + streamState.detectionStats.vestMissing}
+          </div>
+          <div className="text-xs text-gray-500">Missing PPE</div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// Camera Card Component for List View
+function CameraCardList({
+  streamState,
+  onToggleStream,
+  onDetectionComplete
+}: {
+  streamState: CameraStreamState
+  onToggleStream: (cameraId: number) => void
+  onDetectionComplete: (cameraId: number) => (result: any) => Promise<void>
+}) {
+  return (
+    <div className="card p-4">
+      <div className="flex gap-4">
+        {/* Video Stream - Large, takes most of the space */}
+        <div className="flex-1 min-w-0">
+          <LiveVideoStream
+            cameraId={streamState.camera.id}
+            isStreaming={streamState.isStreaming}
+            domainId={streamState.domain.type}
+            domainIdNumber={streamState.domain.id}
+            cameraSourceUri={streamState.camera.source_uri}
+            cameraSourceType={streamState.camera.source_type}
+            onDetectionComplete={onDetectionComplete(streamState.camera.id)}
+            noCard={true}
+          />
+        </div>
+
+        {/* Camera Info and Stats - Right Side, Fixed Width */}
+        <div className="flex-shrink-0 w-64 flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                {getDomainIcon(streamState.domain.type)}
+                <div>
+                  <h3 className="font-semibold text-gray-900">{streamState.camera.name}</h3>
+                  <p className="text-xs text-gray-500">
+                    {streamState.domain.name} {streamState.camera.location ? `• ${streamState.camera.location}` : ''}
+                  </p>
+                </div>
+              </div>
+            </div>
+            <button
+              onClick={() => onToggleStream(streamState.camera.id)}
+              className={`w-full flex items-center justify-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-all mb-4 ${
+                streamState.isStreaming
+                  ? 'bg-[#F06548] hover:bg-[#e04d35] text-white'
+                  : 'bg-[#0AB39C] hover:bg-[#089981] text-white'
+              }`}
+            >
+              {streamState.isStreaming ? (
+                <>
+                  <Pause className="h-4 w-4" />
+                  <span>Stop</span>
+                </>
+              ) : (
+                <>
+                  <Play className="h-4 w-4" />
+                  <span>Start</span>
+                </>
+              )}
+            </button>
+          </div>
+
+          {/* Camera Stats */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="bg-gray-50 rounded-lg p-3 text-center">
+              <div className="text-xl font-bold text-[#405189]">
+                {streamState.detectionStats.totalDetections}
+              </div>
+              <div className="text-xs text-gray-500 mt-1">Persons</div>
+            </div>
+            <div className="bg-gray-50 rounded-lg p-3 text-center">
+              <div className="text-xl font-bold text-[#0AB39C]">
+                {streamState.detectionStats.compliant}
+              </div>
+              <div className="text-xs text-gray-500 mt-1">Compliant</div>
+            </div>
+            <div className="bg-gray-50 rounded-lg p-3 text-center">
+              <div className="text-xl font-bold text-[#F06548]">
+                {streamState.detectionStats.violations}
+              </div>
+              <div className="text-xs text-gray-500 mt-1">Violations</div>
+            </div>
+            <div className="bg-gray-50 rounded-lg p-3 text-center">
+              <div className="text-xl font-bold text-[#F7B84B]">
+                {streamState.detectionStats.hardHatMissing + streamState.detectionStats.vestMissing}
+              </div>
+              <div className="text-xs text-gray-500 mt-1">Missing PPE</div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }

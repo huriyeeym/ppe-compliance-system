@@ -1,4 +1,5 @@
 import { useRef, useEffect, useState } from 'react'
+import { Camera } from 'lucide-react'
 import { detectionService } from '../../lib/api/services/detectionService'
 import { logger } from '../../lib/utils/logger'
 
@@ -10,6 +11,7 @@ interface LiveVideoStreamProps {
   cameraSourceUri?: string  // Camera source URI (e.g., "0", "1", "rtsp://...")
   cameraSourceType?: string  // Camera source type (e.g., "webcam", "rtsp", "file")
   onDetectionComplete?: (result: DetectionResult) => void
+  noCard?: boolean  // If true, don't wrap in card (for use inside existing cards)
 }
 
 interface DetectionResult {
@@ -63,7 +65,8 @@ export default function LiveVideoStream({
   domainIdNumber,
   cameraSourceUri,
   cameraSourceType,
-  onDetectionComplete
+  onDetectionComplete,
+  noCard = false
 }: LiveVideoStreamProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -542,6 +545,70 @@ export default function LiveVideoStream({
     draw()
   }, [detections, isStreaming])
 
+  const videoContent = (
+    <>
+      {/* Video Container - Fixed size for both streaming and placeholder */}
+      <div 
+        className="relative bg-gray-100 rounded-lg overflow-hidden w-full"
+        style={{
+          aspectRatio: '16/9',
+          minHeight: '400px'
+        }}
+      >
+        {/* Video element - always present, just hidden when not streaming */}
+        <video
+          ref={videoRef}
+          autoPlay
+          playsInline
+          muted
+          className="absolute inset-0 w-full h-full object-contain rounded-lg"
+          style={{ 
+            display: isStreaming ? 'block' : 'none'
+          }}
+        />
+        <canvas
+          ref={canvasRef}
+          className="absolute inset-0 pointer-events-none rounded-lg"
+          style={{ 
+            width: '100%',
+            height: '100%',
+            objectFit: 'contain'
+          }}
+        />
+        
+        {/* Placeholder - Stream kapalıyken */}
+        {!isStreaming && (
+          <div className="absolute inset-0 flex items-center justify-center w-full h-full bg-gray-100 rounded-lg">
+            <div className="text-center">
+              <Camera className="w-24 h-24 mx-auto mb-4 text-gray-400 opacity-50" />
+              <p className="text-body text-slate-500">Video stream not started</p>
+              <p className="text-caption text-slate-600 mt-1">
+                Click the "Start" button to activate the webcam
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Detection Info Overlay */}
+        {isStreaming && detections.length > 0 && (
+          <div className="absolute bottom-4 left-4 bg-slate-900/90 px-3 py-2 rounded-lg z-10">
+            <p className="text-xs text-slate-300">
+              {detections.length} people detected
+            </p>
+            <p className="text-xs text-slate-500">
+              {detections.filter(d => d.compliance).length} compliant,{' '}
+              {detections.filter(d => !d.compliance).length} violations
+            </p>
+          </div>
+        )}
+      </div>
+    </>
+  )
+
+  if (noCard) {
+    return videoContent
+  }
+
   return (
     <div className="card">
       <div className="flex items-center justify-between mb-4">
@@ -559,63 +626,7 @@ export default function LiveVideoStream({
         </div>
       </div>
 
-      {/* Video Container */}
-      <div 
-        className="relative bg-transparent rounded-lg overflow-hidden border-0 inline-block"
-        style={{
-          maxWidth: videoSize ? `${Math.min(videoSize.width, window.innerWidth * 0.9)}px` : '100%',
-          maxHeight: videoSize ? `${Math.min(videoSize.height, window.innerHeight * 0.7)}px` : '70vh'
-        }}
-      >
-        <video
-          ref={videoRef}
-          autoPlay
-          playsInline
-          muted
-          className="block max-h-[70vh] max-w-full h-auto w-auto rounded-lg"
-          style={{ 
-            display: isStreaming ? 'block' : 'none',
-            maxWidth: '100%'
-          }}
-        />
-        <canvas
-          ref={canvasRef}
-          className="absolute top-0 left-0 pointer-events-none rounded-lg"
-          style={{ 
-            width: '100%',
-            height: '100%',
-            maxWidth: '100%',
-            maxHeight: '100%',
-            objectFit: 'contain'
-          }}
-        />
-        
-        {/* Placeholder - Stream kapalıyken */}
-        {!isStreaming && (
-          <div className="aspect-video flex items-center justify-center w-full min-h-[400px] max-h-[70vh]">
-            <div className="text-center">
-              <div className="text-6xl mb-4 opacity-30">📹</div>
-              <p className="text-body text-slate-500">Video stream not started</p>
-              <p className="text-caption text-slate-600 mt-1">
-                Click the "Start" button to activate the webcam
-              </p>
-            </div>
-          </div>
-        )}
-
-        {/* Detection Info Overlay */}
-        {isStreaming && detections.length > 0 && (
-          <div className="absolute bottom-4 left-4 bg-slate-900/90 px-3 py-2 rounded-lg">
-            <p className="text-xs text-slate-300">
-              {detections.length} people detected
-            </p>
-            <p className="text-xs text-slate-500">
-              {detections.filter(d => d.compliance).length} compliant,{' '}
-              {detections.filter(d => !d.compliance).length} violations
-            </p>
-          </div>
-        )}
-      </div>
+      {videoContent}
 
       {/* Detection Legend */}
       <div className="mt-4 flex items-center gap-4 text-xs text-slate-400">
