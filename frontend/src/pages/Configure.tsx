@@ -62,6 +62,7 @@ export default function Configure() {
   const [savingCamera, setSavingCamera] = useState(false)
   const [showCameraModalAfterDomainAdd, setShowCameraModalAfterDomainAdd] = useState(false)
   const [selectedDomainForCamera, setSelectedDomainForCamera] = useState<number | null>(null)
+  const [editingCamera, setEditingCamera] = useState<Camera | null>(null)
 
   // Check access on mount
   useEffect(() => {
@@ -224,17 +225,26 @@ export default function Configure() {
 
     setSavingCamera(true)
     try {
-      const created = await cameraService.create(payload)
-      setCameras((prev) => [...prev, created])
+      if (editingCamera) {
+        // Update existing camera
+        const updated = await cameraService.update(editingCamera.id, payload)
+        setCameras((prev) => prev.map((c) => (c.id === editingCamera.id ? updated : c)))
+        toast.success(`Camera "${updated.name}" updated successfully`)
+      } else {
+        // Create new camera
+        const created = await cameraService.create(payload)
+        setCameras((prev) => [...prev, created])
+        toast.success(`Camera "${created.name}" created successfully`)
+      }
       setCameraForm(initialCameraForm)
       setCameraFormVisible(false)
       setShowCameraModalAfterDomainAdd(false)
       setSelectedDomainForCamera(null)
-      toast.success(`Camera "${created.name}" created successfully`)
+      setEditingCamera(null)
     } catch (submitError: any) {
-      logger.error('Camera create failed', submitError)
+      logger.error('Camera save failed', submitError)
       // Extract error message from API response
-      let errorMessage = 'Failed to add camera'
+      let errorMessage = editingCamera ? 'Failed to update camera' : 'Failed to add camera'
       if (submitError?.response?.data?.detail) {
         errorMessage = submitError.response.data.detail
       } else if (submitError?.message) {
@@ -248,14 +258,20 @@ export default function Configure() {
     }
   }
 
-  const handleEditCamera = async (cameraId: number) => {
-    try {
-      // TODO: Implement camera edit modal/form
-      logger.info('Edit camera', { cameraId })
-      toast.success('Camera edit feature coming soon')
-    } catch (err) {
-      logger.error('Error editing camera', err)
-      toast.error('Failed to edit camera')
+  const handleEditCamera = (camera: Camera) => {
+    setEditingCamera(camera)
+    setCameraForm({
+      name: camera.name,
+      domain_id: camera.domain_id,
+      source_type: camera.source_type,
+      source_uri: camera.source_uri,
+      location: camera.location || '',
+      is_active: camera.is_active,
+    })
+    setCameraFormVisible(true)
+    // Switch to cameras tab if not already there
+    if (activeTab !== 'cameras') {
+      setActiveTab('cameras')
     }
   }
 
@@ -856,6 +872,24 @@ export default function Configure() {
                                 {camera.is_active ? 'Active' : 'Inactive'}
                               </span>
                             </div>
+                            <PermissionGate roles={['super_admin', 'admin']}>
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={() => handleEditCamera(camera)}
+                                  className="p-1.5 text-[#F7B84B] hover:bg-[#F7B84B]/10 rounded-lg transition-colors"
+                                  title="Edit camera"
+                                >
+                                  <Edit className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteCamera(camera.id, camera.name)}
+                                  className="p-1.5 text-[#F06548] hover:bg-[#F06548]/10 rounded-lg transition-colors"
+                                  title="Delete camera"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </PermissionGate>
                           </div>
                           <p className="text-xs text-[#878A99] mb-1">
                             <span className="font-medium">{getSourceTypeLabel(camera.source_type)}:</span> {camera.source_uri}
@@ -892,7 +926,14 @@ export default function Configure() {
             <div className="flex items-center justify-between">
               <h3 className="text-section-title">Camera Management</h3>
               <PermissionGate roles={['super_admin', 'admin']}>
-                <button className="btn-primary flex items-center gap-2" onClick={() => setCameraFormVisible((prev) => !prev)}>
+                <button
+                  className="btn-primary flex items-center gap-2"
+                  onClick={() => {
+                    setEditingCamera(null)
+                    setCameraForm(initialCameraForm)
+                    setCameraFormVisible((prev) => !prev)
+                  }}
+                >
                   <Plus className="w-4 h-4" />
                   <span>{cameraFormVisible ? 'Hide Form' : 'Add Camera'}</span>
                 </button>
@@ -905,7 +946,7 @@ export default function Configure() {
             <PermissionGate roles={['super_admin', 'admin']}>
               {cameraFormVisible && (
                 <div className="card">
-                <h3 className="text-section-title mb-4">Add New Camera</h3>
+                <h3 className="text-section-title mb-4">{editingCamera ? 'Edit Camera' : 'Add New Camera'}</h3>
                 <form onSubmit={handleCameraSubmit} className="space-y-4">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
@@ -987,6 +1028,7 @@ export default function Configure() {
                         setCameraFormVisible(false)
                         setShowCameraModalAfterDomainAdd(false)
                         setSelectedDomainForCamera(null)
+                        setEditingCamera(null)
                       }}
                     >
                       Cancel
@@ -996,7 +1038,7 @@ export default function Configure() {
                       className="btn-primary"
                       disabled={savingCamera}
                     >
-                      {savingCamera ? 'Saving...' : 'Save'}
+                      {savingCamera ? 'Saving...' : (editingCamera ? 'Update' : 'Create')}
                     </button>
                   </div>
                 </form>
@@ -1045,7 +1087,7 @@ export default function Configure() {
                         <PermissionGate roles={['super_admin', 'admin']}>
                           <div className="flex gap-2">
                             <button
-                              onClick={() => handleEditCamera(camera.id)}
+                              onClick={() => handleEditCamera(camera)}
                               className="btn-ghost flex items-center gap-1 text-xs"
                               title="Edit camera"
                             >

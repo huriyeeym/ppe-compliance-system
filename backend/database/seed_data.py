@@ -74,7 +74,7 @@ PPE_TYPES = [
         "name": "hard_hat",
         "display_name": "Hard Hat",
         "category": "head",
-        "model_class_name": "hardhat",
+        "model_class_name": "head_helmet",  # Fixed: best.pt uses "head_helmet"
         "status": DomainStatus.ACTIVE
     },
     {
@@ -82,7 +82,7 @@ PPE_TYPES = [
         "name": "safety_vest",
         "display_name": "Safety Vest",
         "category": "body",
-        "model_class_name": "safety_vest",
+        "model_class_name": "vest",  # Fixed: best.pt uses "vest"
         "status": DomainStatus.ACTIVE
     },
     {
@@ -100,7 +100,7 @@ PPE_TYPES = [
         "name": "safety_glasses",
         "display_name": "Safety Glasses",
         "category": "eye",
-        "model_class_name": "goggles",
+        "model_class_name": "glasses",  # Fixed: best.pt uses "glasses"
         "status": DomainStatus.ACTIVE
     },
     {
@@ -108,7 +108,7 @@ PPE_TYPES = [
         "name": "face_mask",
         "display_name": "Face Mask",
         "category": "face",
-        "model_class_name": "mask",
+        "model_class_name": "face_mask",  # Fixed: best.pt uses "face_mask"
         "status": DomainStatus.ACTIVE
     },
     {
@@ -116,7 +116,7 @@ PPE_TYPES = [
         "name": "gloves",
         "display_name": "Gloves",
         "category": "hand",
-        "model_class_name": "gloves",
+        "model_class_name": "hand_glove",  # Fixed: best.pt uses "hand_glove"
         "status": DomainStatus.ACTIVE
     },
     {
@@ -124,7 +124,7 @@ PPE_TYPES = [
         "name": "ear_protection",
         "display_name": "Ear Protection",
         "category": "ear",
-        "model_class_name": "earmuff",
+        "model_class_name": "Ear-protection",  # Fixed: best.pt uses "Ear-protection"
         "status": DomainStatus.ACTIVE
     },
     {

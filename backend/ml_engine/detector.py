@@ -6,6 +6,7 @@ Handles person and PPE item detection from video frames
 from pathlib import Path
 from typing import List, Dict, Tuple, Optional
 import numpy as np
+import cv2
 from ultralytics import YOLO
 
 from backend.config import settings
@@ -47,11 +48,29 @@ class PPEDetector:
         """
         self.model_path = model_path or self._get_default_model_path()
         self.confidence_threshold = confidence_threshold or settings.confidence_threshold
-        self.required_ppe = required_ppe or ["helmet", "vest"]  # Default: construction
+        self.required_ppe = required_ppe or ["head_helmet", "vest"]  # Default: construction
         self.enable_tracking = enable_tracking
 
+        # PPE-specific confidence thresholds
+        # Lowered thresholds for better detection (especially gloves and glasses)
+        self.ppe_confidence_thresholds = {
+            "head_helmet": 0.30,
+            "vest": 0.25,
+            "hand_glove": 0.22,  # Lowered from 0.30 - gloves are small and hard to detect
+            "boots": 0.25,
+            "glasses": 0.25,  # Lowered from 0.32 - glasses are very small
+            "face_mask": 0.28,
+            "Ear-protection": 0.25,  # Lowered - ear protection is small
+            "head_nohelmet": 0.20,
+            "hand_noglove": 0.20,
+            "face_nomask": 0.20,
+            "No_Glasses": 0.20,
+            "No_Ear-Protection": 0.20,
+        }
+
         # Load YOLO model
-        self.model = self._load_model()
+        logger.info(f"Loading PPE detection model: {self.model_path}")
+        self.model = YOLO(str(self.model_path))
 
         # Initialize tracker if enabled
         self.tracker = PersonTracker() if enable_tracking else None
@@ -66,48 +85,16 @@ class PPEDetector:
         logger.info(f"Tracking enabled: {self.enable_tracking}")
     
     def _get_default_model_path(self) -> Path:
-        """Get default model path from config"""
+        """Get default model path - uses best.pt"""
+        best_model = Path("best.pt")
+        if best_model.exists():
+            return str(best_model)
+
         model_file = settings.models_dir / settings.default_model
-        
-        # If model doesn't exist, use pre-trained YOLOv8
-        if not model_file.exists():
-            logger.warning(f"Custom model not found: {model_file}")
-            logger.info("Using YOLOv8 pre-trained model (will download if needed)")
-            return "yolov8n.pt"  # Nano model (fastest)
-        
-        return str(model_file)
-    
-    def _load_model(self) -> YOLO:
-        """
-        Load YOLO model (supports local .pt files and Hugging Face model IDs)
-        
-        If model_path contains '/' and doesn't exist as a file, it's treated as a Hugging Face model ID.
-        """
-        try:
-            # Check if model_path is a Hugging Face model ID (contains '/' and not a local file)
-            if '/' in str(self.model_path) and not Path(self.model_path).exists():
-                # Try to load from Hugging Face using ultralyticsplus
-                try:
-                    from ultralyticsplus import YOLO as YOLOPlus
-                    logger.info(f"Loading Hugging Face model: {self.model_path}")
-                    model = YOLOPlus(str(self.model_path))
-                    return model
-                except ImportError:
-                    logger.warning("ultralyticsplus not installed. Install with: pip install ultralyticsplus")
-                    logger.info("Falling back to standard YOLO")
-                    # Fall through to standard YOLO
-                except Exception as e:
-                    logger.warning(f"Failed to load from Hugging Face: {e}")
-                    logger.info("Falling back to standard YOLO")
-                    # Fall through to standard YOLO
-            
-            # Load standard YOLO model (local file or pretrained)
-            model = YOLO(self.model_path)
-            return model
-        except Exception as e:
-            logger.error(f"Failed to load model: {e}")
-            logger.info("Falling back to YOLOv8 pre-trained")
-            return YOLO("yolov8n.pt")
+        if model_file.exists():
+            return str(model_file)
+
+        return "best.pt"
     
     def detect(self, frame: np.ndarray) -> List[Dict]:
         """
@@ -133,14 +120,28 @@ class PPEDetector:
                 ...
             ]
         """
-        # Run YOLO inference
-        results = self.model(frame, conf=self.confidence_threshold, verbose=False)
+        # Dual-scale detection - balanced speed and accuracy
+        all_detections = []
+        conf_low = 0.12  # Lowered from 0.15 for better detection of small PPE items
 
-        # Parse results
-        detections = self._parse_results(results[0])
+        # Scale 1: Fast detection (640)
+        results_640 = self.model(frame, conf=conf_low, imgsz=640, verbose=False)
+        detections_640 = self._parse_results(results_640[0])
+        all_detections.extend(detections_640)
+
+        # Scale 2: Better accuracy (1280) - crucial for small items like gloves/glasses
+        results_1280 = self.model(frame, conf=conf_low, imgsz=1280, verbose=False)
+        detections_1280 = self._parse_results(results_1280[0])
+        all_detections.extend(detections_1280)
+
+        # Remove duplicates
+        all_detections = self._remove_duplicates(all_detections, iou_threshold=0.5)
+
+        # Filter PPE
+        all_detections = self._filter_ppe_detections(all_detections)
 
         # Group PPE items with persons
-        detections = self._group_ppe_with_persons(detections)
+        detections = self._group_ppe_with_persons(all_detections)
 
         # Check compliance for each person
         detections = self._check_compliance(detections)
@@ -217,7 +218,66 @@ class PPEDetector:
             return detections
 
         return detections
-    
+
+    def _filter_ppe_detections(self, detections: List[Dict]) -> List[Dict]:
+        """Filter PPE detections using class-specific confidence thresholds"""
+        filtered = []
+        for det in detections:
+            class_name = det["class"]
+            confidence = det["confidence"]
+
+            if class_name == "person":
+                if confidence >= 0.25:
+                    filtered.append(det)
+                continue
+
+            ppe_threshold = self.ppe_confidence_thresholds.get(class_name, 0.30)
+            if confidence >= ppe_threshold:
+                filtered.append(det)
+
+        return filtered
+
+    def _remove_duplicates(self, detections: List[Dict], iou_threshold: float = 0.5) -> List[Dict]:
+        """Remove duplicate detections using NMS"""
+        if not detections:
+            return []
+
+        by_class = {}
+        for det in detections:
+            cls = det["class"]
+            if cls not in by_class:
+                by_class[cls] = []
+            by_class[cls].append(det)
+
+        filtered = []
+        for cls, dets in by_class.items():
+            dets = sorted(dets, key=lambda x: x["confidence"], reverse=True)
+            keep = []
+            while dets:
+                best = dets.pop(0)
+                keep.append(best)
+                dets = [d for d in dets if self._calculate_iou(best["bbox"], d["bbox"]) < iou_threshold]
+            filtered.extend(keep)
+
+        return filtered
+
+    def _calculate_iou(self, box1: Dict, box2: Dict) -> float:
+        """Calculate IoU between two bounding boxes"""
+        x1 = max(box1["x"], box2["x"])
+        y1 = max(box1["y"], box2["y"])
+        x2 = min(box1["x"] + box1["w"], box2["x"] + box2["w"])
+        y2 = min(box1["y"] + box1["h"], box2["y"] + box2["h"])
+
+        if x2 < x1 or y2 < y1:
+            return 0.0
+
+        intersection = (x2 - x1) * (y2 - y1)
+        area1 = box1["w"] * box1["h"]
+        area2 = box2["w"] * box2["h"]
+        union = area1 + area2 - intersection
+
+        return intersection / union if union > 0 else 0.0
+
     def _group_ppe_with_persons(self, detections: List[Dict]) -> List[Dict]:
         """
         Group PPE items with detected persons
@@ -242,7 +302,9 @@ class PPEDetector:
             person["ppe_items"] = []
             
             for ppe in ppe_items:
-                if self._is_inside(ppe["bbox"], person["bbox"]):
+                # Use lower threshold (0.3) for better PPE association
+                # Small items like gloves and glasses may only partially overlap
+                if self._is_inside(ppe["bbox"], person["bbox"], threshold=0.3):
                     person["ppe_items"].append({
                         "type": ppe["class"],
                         "confidence": ppe["confidence"]
@@ -288,36 +350,35 @@ class PPEDetector:
 
     def _check_compliance(self, detections: List[Dict]) -> List[Dict]:
         """
-        Check PPE compliance for each person
-
-        For each person, checks if all required PPE items are present.
-        Calculates compliance score, missing items, and violation severity.
-
-        Args:
-            detections: List of person detections with ppe_items
-
-        Returns:
-            Enhanced detections with compliance information:
-            - missing_ppe: List of missing PPE types
-            - is_compliant: Boolean (True if all PPE present)
-            - compliance_score: Float 0.0-1.0 (percentage of PPE present)
-            - severity: String "none", "warning", or "critical"
+        Check PPE compliance using STRICT logic - NO benefit of doubt
         """
+        negative_indicators = {
+            "head_helmet": ["head_nohelmet"],
+            "vest": [],
+            "hand_glove": ["hand_noglove"],
+            "face_mask": ["face_nomask"],
+            "glasses": ["No_Glasses"],
+            "Ear-protection": ["No_Ear-Protection"]
+        }
+
         for person in detections:
-            # Get list of detected PPE types for this person
             detected_ppe_types = [item["type"] for item in person.get("ppe_items", [])]
+            missing_ppe = []
 
-            # Find missing PPE
-            missing_ppe = [
-                ppe_type
-                for ppe_type in self.required_ppe
-                if ppe_type not in detected_ppe_types
-            ]
+            for ppe_type in self.required_ppe:
+                positive_detected = ppe_type in detected_ppe_types
+                negative_classes = negative_indicators.get(ppe_type, [])
+                negative_detected = any(neg_class in detected_ppe_types for neg_class in negative_classes)
 
-            # Calculate compliance
+                # STRICT: if positive detected = present, else = missing
+                if positive_detected:
+                    pass  # Present
+                elif negative_detected:
+                    missing_ppe.append(ppe_type)
+                else:
+                    missing_ppe.append(ppe_type)  # Strict: not detected = missing
+
             total_required = len(self.required_ppe)
-            total_detected = len(detected_ppe_types)
-
             person["missing_ppe"] = missing_ppe
             person["is_compliant"] = len(missing_ppe) == 0
             person["compliance_score"] = (

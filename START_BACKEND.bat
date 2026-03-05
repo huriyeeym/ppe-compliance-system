@@ -1,36 +1,70 @@
 @echo off
-echo ========================================
-echo PPE Detection Backend Starter
-echo ========================================
-echo.
+chcp 65001 >nul
+echo ====================================
+echo PPE Compliance System - Backend
+echo ====================================
+cd /d "%~dp0"
 
-echo [1/4] Killing old backend processes...
-for /f "tokens=5" %%a in ('netstat -ano ^| findstr :8000.*LISTENING 2^>nul') do (
-    echo Killing process %%a...
-    taskkill /F /PID %%a >nul 2>&1
+:: Check if Python is installed
+python --version >nul 2>&1
+if errorlevel 1 (
+    echo [ERROR] Python is not installed or not in PATH!
+    echo Please install Python 3.10+ from https://www.python.org/downloads/
+    pause
+    exit /b 1
 )
-timeout /t 2 /nobreak >nul
 
-echo [2/4] Clearing Python cache...
-for /d /r backend %%d in (__pycache__) do @if exist "%%d" rd /s /q "%%d" >nul 2>&1
-del /s /q backend\*.pyc >nul 2>&1
+echo.
+echo [1/3] Checking Python virtual environment...
 
-echo [3/4] Starting backend with smart recording...
-echo.
-echo IMPORTANT: The backend will now start with:
-echo   - Person tracking enabled (ByteTrack)
-echo   - Smart violation recording
-echo   - Adaptive recording intervals
-echo.
-echo Backend will be available at: http://localhost:8000
-echo API documentation: http://localhost:8000/docs
-echo.
-echo Press CTRL+C to stop the backend
-echo.
+:: Create virtual environment if it doesn't exist
+if not exist "venv" (
+    echo Creating virtual environment...
+    python -m venv venv
+    if errorlevel 1 (
+        echo [ERROR] Failed to create virtual environment!
+        pause
+        exit /b 1
+    )
+    echo Virtual environment created successfully.
+) else (
+    echo Virtual environment found.
+)
 
-echo [4/4] Starting uvicorn...
-cd /d %~dp0
+:: Activate virtual environment
+echo.
+echo [2/3] Activating virtual environment...
 call venv\Scripts\activate.bat
-python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
+if errorlevel 1 (
+    echo [ERROR] Failed to activate virtual environment!
+    pause
+    exit /b 1
+)
 
-pause
+:: Install/update dependencies
+echo.
+echo [3/3] Installing/updating dependencies...
+pip install -r backend\requirements.txt --quiet
+if errorlevel 1 (
+    echo [WARNING] Some dependencies may have failed to install.
+    echo Attempting to continue...
+)
+
+:: Set Python path
+set PYTHONPATH=%CD%
+
+echo.
+echo ====================================
+echo Starting FastAPI server...
+echo ====================================
+echo.
+echo Backend URL: http://localhost:8000
+echo Swagger UI:  http://localhost:8000/docs
+echo.
+echo Press Ctrl+C to stop the server.
+echo.
+
+python -m uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
+
+:: Deactivate virtual environment on exit
+call venv\Scripts\deactivate.bat 2>nul

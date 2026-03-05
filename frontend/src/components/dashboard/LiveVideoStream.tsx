@@ -35,10 +35,8 @@ interface Detection {
   person_id: number
   track_id: number | null
   bbox: { x: number; y: number; w: number; h: number }
-  ppe_status: {
-    hard_hat: { detected: boolean; confidence: number }
-    safety_vest: { detected: boolean; confidence: number }
-  }
+  detected_ppe: Array<{ type: string; confidence: number }>
+  missing_ppe: string[]
   compliance: boolean
 }
 
@@ -279,25 +277,12 @@ export default function LiveVideoStream({
             const detectedPpe = Array.isArray(det.detected_ppe) ? det.detected_ppe : []
             const missingPpe = Array.isArray(det.missing_ppe) ? det.missing_ppe : []
 
-            const hardHatStatus = detectedPpe.find((ppe) => ppe.type === 'hard_hat')
-            const vestStatus = detectedPpe.find((ppe) => ppe.type === 'safety_vest')
-            const missingHardHat = missingPpe.some((ppe) => ppe.type === 'hard_hat')
-            const missingVest = missingPpe.some((ppe) => ppe.type === 'safety_vest')
-
             return {
               person_id: det.person_id ?? index + 1,
               track_id: det.track_id ?? null,
               bbox: det.bbox,
-              ppe_status: {
-                hard_hat: {
-                  detected: !missingHardHat || !!hardHatStatus,
-                  confidence: hardHatStatus?.confidence ?? 0,
-                },
-                safety_vest: {
-                  detected: !missingVest || !!vestStatus,
-                  confidence: vestStatus?.confidence ?? 0,
-                },
-              },
+              detected_ppe: detectedPpe,
+              missing_ppe: missingPpe.map((ppe: any) => ppe.type || ppe),
               compliance: missingPpe.length === 0,
             }
           })
@@ -468,7 +453,7 @@ export default function LiveVideoStream({
 
       // Detection overlay çiz - video sınırları içinde kalacak şekilde
       detections.forEach((det) => {
-        const { bbox, ppe_status, compliance } = det
+        const { bbox, compliance } = det
 
         // Bbox'ın video sınırları içinde olduğundan emin ol
         const clampedX = Math.max(0, Math.min(bbox.x, videoWidth - 1))
@@ -481,49 +466,54 @@ export default function LiveVideoStream({
         ctx.lineWidth = 3
         ctx.strokeRect(clampedX, clampedY, clampedW, clampedH)
 
-        // PPE status badges - For construction: Hard Hat and Safety Vest
-        // Badge'leri video sınırları içinde tut
-        const badgeHeight = 25
+        // Dynamic PPE status badges - show detected and missing PPE
+        const badgeHeight = 20
         const badgeY = Math.max(0, clampedY - badgeHeight - 5)
         let badgeX = clampedX
 
-        // Hard hat status
-        const hardHatWidth = 70
-        if (badgeX + hardHatWidth <= videoWidth) {
-          if (ppe_status.hard_hat.detected) {
-            ctx.fillStyle = '#10B981'
-            ctx.fillRect(badgeX, badgeY, hardHatWidth, badgeHeight)
-            ctx.fillStyle = '#FFFFFF'
-            ctx.font = 'bold 12px sans-serif'
-            ctx.fillText('✓ Hard Hat', badgeX + 5, badgeY + 17)
-            badgeX += hardHatWidth + 5
-          } else {
-            ctx.fillStyle = '#EF4444'
-            ctx.fillRect(badgeX, badgeY, hardHatWidth, badgeHeight)
-            ctx.fillStyle = '#FFFFFF'
-            ctx.font = 'bold 12px sans-serif'
-            ctx.fillText('✗ Hard Hat', badgeX + 5, badgeY + 17)
-            badgeX += hardHatWidth + 5
+        // Helper function to get short PPE name for badge
+        const getPPEBadgeName = (type: string): string => {
+          const names: Record<string, string> = {
+            head_helmet: 'Helmet',
+            vest: 'Vest',
+            glasses: 'Glasses',
+            hand_glove: 'Gloves',
+            'Ear-protection': 'Ear Prot.',
+            face_mask: 'Mask',
+            boots: 'Boots',
           }
+          return names[type] || type
         }
 
-        // Safety vest status - sadece video sınırları içindeyse çiz
-        const vestWidth = 80
-        if (badgeX + vestWidth <= videoWidth && badgeY >= 0) {
-          if (ppe_status.safety_vest.detected) {
+        // Show detected PPE (green badges)
+        det.detected_ppe.slice(0, 3).forEach((ppe) => {
+          const badgeName = `✓ ${getPPEBadgeName(ppe.type)}`
+          const badgeWidth = ctx.measureText(badgeName).width + 15
+
+          if (badgeX + badgeWidth <= videoWidth && badgeY >= 0) {
             ctx.fillStyle = '#10B981'
-            ctx.fillRect(badgeX, badgeY, vestWidth, badgeHeight)
+            ctx.fillRect(badgeX, badgeY, badgeWidth, badgeHeight)
             ctx.fillStyle = '#FFFFFF'
-            ctx.font = 'bold 12px sans-serif'
-            ctx.fillText('✓ Safety Vest', badgeX + 5, badgeY + 17)
-          } else {
-            ctx.fillStyle = '#EF4444'
-            ctx.fillRect(badgeX, badgeY, vestWidth, badgeHeight)
-            ctx.fillStyle = '#FFFFFF'
-            ctx.font = 'bold 12px sans-serif'
-            ctx.fillText('✗ Safety Vest', badgeX + 5, badgeY + 17)
+            ctx.font = 'bold 11px sans-serif'
+            ctx.fillText(badgeName, badgeX + 5, badgeY + 14)
+            badgeX += badgeWidth + 3
           }
-        }
+        })
+
+        // Show missing PPE (red badges)
+        det.missing_ppe.slice(0, 2).forEach((ppeType) => {
+          const badgeName = `✗ ${getPPEBadgeName(ppeType)}`
+          const badgeWidth = ctx.measureText(badgeName).width + 15
+
+          if (badgeX + badgeWidth <= videoWidth && badgeY >= 0) {
+            ctx.fillStyle = '#EF4444'
+            ctx.fillRect(badgeX, badgeY, badgeWidth, badgeHeight)
+            ctx.fillStyle = '#FFFFFF'
+            ctx.font = 'bold 11px sans-serif'
+            ctx.fillText(badgeName, badgeX + 5, badgeY + 14)
+            badgeX += badgeWidth + 3
+          }
+        })
 
         // Person ID - video sınırları içinde
         const idWidth = 30
@@ -632,11 +622,11 @@ export default function LiveVideoStream({
       <div className="mt-4 flex items-center gap-4 text-xs text-slate-400">
         <div className="flex items-center gap-2">
           <div className="w-4 h-4 border-2 border-green-400"></div>
-          <span>Compliant (Hard Hat + Vest present)</span>
+          <span>Compliant (All required PPE present)</span>
         </div>
         <div className="flex items-center gap-2">
           <div className="w-4 h-4 border-2 border-red-400"></div>
-          <span>Violation (Hard Hat or Vest missing)</span>
+          <span>Violation (Required PPE missing)</span>
         </div>
       </div>
     </div>

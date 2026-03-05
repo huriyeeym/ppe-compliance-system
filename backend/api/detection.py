@@ -35,21 +35,29 @@ _video_recorder = None
 def get_detector(domain_type: str = None, required_ppe: list = None) -> PPEDetector:
     """
     Get or create detector instance for a specific domain
-    
+
+    Each domain gets its OWN detector instance with separate:
+    - Tracker (person IDs are domain-specific)
+    - Bbox smoother (separate smoothing per domain)
+    - Required PPE rules
+
+    This ensures complete isolation between domains (microservice approach)
+
     Args:
         domain_type: Domain type (e.g., "construction", "manufacturing", etc.)
                     If None, uses default detector
-        required_ppe: List of required PPE model class names (e.g., ["hardhat", "safety_vest"])
-                     If None, uses default for domain or ["helmet", "vest"]
-    
+        required_ppe: List of required PPE model class names (e.g., ["head_helmet", "vest"])
+                     If None, uses default for domain
+
     Returns:
         PPEDetector instance configured for the domain
     """
     global _detectors, _default_detector
-    
-    # Create cache key that includes required_ppe to allow different configurations
-    cache_key = f"{domain_type}_{hash(tuple(required_ppe) if required_ppe else ())}"
-    
+
+    # Use domain_type as cache key (one detector per domain)
+    # Each domain must have its own detector for isolation
+    cache_key = domain_type if domain_type else "default"
+
     # If no domain specified, use default detector
     if domain_type is None:
         if _default_detector is None:
@@ -57,31 +65,40 @@ def get_detector(domain_type: str = None, required_ppe: list = None) -> PPEDetec
             _default_detector = PPEDetector(enable_tracking=True, required_ppe=required_ppe)
             logger.info(f"Default detector initialized: {_default_detector.get_model_info()}")
         return _default_detector
-    
-    # Get domain-specific detector
+
+    # Get domain-specific detector (create if doesn't exist)
     if cache_key not in _detectors:
-        logger.info(f"Initializing PPE Detector for domain: {domain_type}")
-        
+        logger.info(f"[DETECTOR INIT] Creating NEW detector for domain: {domain_type}")
+        logger.info(f"[DETECTOR INIT] Required PPE: {required_ppe}")
+
         # Get model path from registry
         registry = get_registry()
         model_path = registry.get_model_for_domain(domain_type)
-        
+
         if model_path:
-            logger.info(f"Using domain-specific model: {model_path}")
+            logger.info(f"[DETECTOR INIT] Using domain-specific model: {model_path}")
             _detectors[cache_key] = PPEDetector(
                 model_path=str(model_path),
                 enable_tracking=True,
                 required_ppe=required_ppe
             )
         else:
-            logger.warning(f"No model found for domain {domain_type}, using default")
+            logger.info(f"[DETECTOR INIT] No specific model for {domain_type}, using default best.pt")
             _detectors[cache_key] = PPEDetector(
                 enable_tracking=True,
                 required_ppe=required_ppe
             )
-        
-        logger.info(f"Detector for {domain_type} initialized with required PPE: {required_ppe}")
-    
+
+        logger.info(f"[DETECTOR INIT] ✓ Detector created for {domain_type}")
+    else:
+        # Detector exists - update required_ppe if changed
+        existing_detector = _detectors[cache_key]
+        if existing_detector.required_ppe != required_ppe:
+            logger.info(f"[DETECTOR UPDATE] Updating required PPE for {domain_type}")
+            logger.info(f"[DETECTOR UPDATE] Old: {existing_detector.required_ppe}")
+            logger.info(f"[DETECTOR UPDATE] New: {required_ppe}")
+            existing_detector.required_ppe = required_ppe
+
     return _detectors[cache_key]
 
 
@@ -191,40 +208,70 @@ async def detect_frame(
         if frame is None:
             raise HTTPException(status_code=400, detail="Invalid image file")
 
-        # Get domain type and required PPE if domain_id provided
+        # DEBUG: Log incoming frame size
+        logger.info(f"[FRAME] Received frame size: {frame.shape} (H x W x C)")
+
+        # Get domain type and required PPE from CAMERA (not from request parameter!)
+        # The camera knows which domain it belongs to - CRITICAL for correct detection
         domain_type = None
         required_ppe = None
-        if domain_id:
+        actual_domain_id = None
+
+        if camera_id and camera_id > 0:
+            # Get camera from database to find its domain
+            camera = await crud.get_camera_by_id(db, camera_id)
+            if camera and camera.domain_id:
+                actual_domain_id = camera.domain_id
+                domain = await crud.get_domain_by_id(db, actual_domain_id)
+                if domain:
+                    domain_type = domain.type
+                    logger.info(f"Camera {camera_id} ({camera.name}) is in domain: {domain_type} (domain_id={actual_domain_id})")
+                else:
+                    logger.warning(f"Domain {actual_domain_id} not found for camera {camera_id}")
+            else:
+                logger.warning(f"Camera {camera_id} has no domain assigned")
+        elif domain_id:
+            # Fallback: If no camera_id, use domain_id from request (for testing)
+            actual_domain_id = domain_id
             domain = await crud.get_domain_by_id(db, domain_id)
             if domain:
                 domain_type = domain.type
-                logger.info(f"Using domain-specific model for: {domain_type} (domain_id={domain_id})")
-                
-                # Get required PPE from database
-                rules = await crud.get_domain_rules(db, domain_id)
-                required_rules = [r for r in rules if r.is_required]
-                if required_rules:
-                    # Map PPE type names to model class names
-                    # Model uses: head_helmet, vest, boots, face_mask, hand_glove, glasses, Ear-protection
-                    ppe_to_model_map = {
-                        "hard_hat": "head_helmet",
-                        "safety_vest": "vest",
-                        "safety_boots": "boots",
-                        "face_mask": "face_mask",
-                        "gloves": "hand_glove",
-                        "safety_glasses": "glasses",
-                        "ear_protection": "Ear-protection"
-                    }
-                    required_ppe = []
-                    for rule in required_rules:
-                        if rule.ppe_type:
-                            ppe_name = rule.ppe_type.name
-                            # Map to model class name
-                            model_class = ppe_to_model_map.get(ppe_name, rule.ppe_type.model_class_name or ppe_name)
+                logger.info(f"Using domain from request parameter: {domain_type} (domain_id={domain_id})")
+
+        # Get required PPE rules for the domain
+        if actual_domain_id:
+            rules = await crud.get_domain_rules(db, actual_domain_id)
+            required_rules = [r for r in rules if r.is_required]
+            if required_rules:
+                # Map PPE type names to best.pt model class names
+                # best.pt model classes: head_helmet, vest, boots, hand_glove, glasses, face_mask, Ear-protection, etc.
+                ppe_to_model_map = {
+                    "hard_hat": "head_helmet",
+                    "safety_vest": "vest",
+                    "safety_boots": "boots",
+                    "face_mask": "face_mask",
+                    "gloves": "hand_glove",
+                    "safety_glasses": "glasses",
+                    "ear_protection": "Ear-protection",
+                    "safety_goggles": "glasses"  # Added for manufacturing
+                }
+                required_ppe = []
+                for rule in required_rules:
+                    if rule.ppe_type:
+                        ppe_name = rule.ppe_type.name
+                        # First try the model_class_name from database (most accurate)
+                        model_class = rule.ppe_type.model_class_name
+                        # If not set in DB, try the mapping
+                        if not model_class:
+                            model_class = ppe_to_model_map.get(ppe_name, ppe_name)
+                        # Skip PPE types not supported by this model (None values)
+                        if model_class is not None:
                             required_ppe.append(model_class)
-                    logger.info(f"Required PPE for {domain_type}: {required_ppe}")
-            else:
-                logger.warning(f"Domain {domain_id} not found, using default detector")
+                            logger.info(f"  - Mapped {ppe_name} -> {model_class}")
+
+                # Remove duplicates
+                required_ppe = list(set(required_ppe))
+                logger.info(f"Required PPE for {domain_type}: {required_ppe}")
 
         # Get domain-specific detector with required PPE
         detector = get_detector(domain_type=domain_type, required_ppe=required_ppe)
@@ -253,25 +300,28 @@ async def detect_frame(
             severity = det.get("severity", "none")
             missing_ppe_list = det.get("missing_ppe", [])
 
-            # Normalize PPE items
+            # Filter and normalize PPE items - ONLY show relevant PPE for this domain
+            # Example: Construction domain only cares about head_helmet and vest
+            # Don't show gloves, glasses, mask etc. on the UI for construction
             normalized_detected = []
-            detected_types = set()
+            relevant_ppe_types = set(required_ppe) if required_ppe else set()
 
             for item in ppe_items:
-                norm_type = _normalize_ppe_type(item.get("type", ""))
-                if not norm_type:
-                    continue
+                ppe_type = item.get("type", "")
                 confidence_score = float(item.get("confidence", 0))
-                normalized_detected.append({
-                    "type": norm_type,
-                    "confidence": confidence_score,
-                })
-                detected_types.add(norm_type)
 
+                # ONLY include PPE that is relevant to this domain (required_ppe)
+                # Skip irrelevant PPE (e.g., don't show glasses in construction domain)
+                if ppe_type in relevant_ppe_types:
+                    normalized_detected.append({
+                        "type": ppe_type,
+                        "confidence": confidence_score,
+                    })
+
+            # Use missing_ppe from detector (already calculated with correct domain rules)
             missing_ppe = [
                 {"type": ppe_type, "required": True}
-                for ppe_type in EXPECTED_PPE
-                if ppe_type not in detected_types
+                for ppe_type in missing_ppe_list
             ]
 
             # ✅ Check if we should record this violation
@@ -335,8 +385,8 @@ async def detect_frame(
                         logger.error(f"Failed to save video segment: {e}")
                         # Continue even if video save fails
 
-                # ✅ Save violation to database if camera_id and domain_id provided
-                if camera_id and camera_id > 0 and domain_id and domain_id > 0:
+                # ✅ Save violation to database if camera_id and actual_domain_id provided
+                if camera_id and camera_id > 0 and actual_domain_id and actual_domain_id > 0:
                     try:
                         violation_service = ViolationService(db)
                         
@@ -357,7 +407,6 @@ async def detect_frame(
                             logger.info(f"[FACE RECOGNITION] Starting face matching for violation snapshot: {snapshot_path}")
                             try:
                                 # Get organization_id from camera
-                                from backend.database import crud
                                 camera = await crud.get_camera_by_id(db, camera_id)
                                 if camera and camera.organization_id:
                                     logger.info(f"[FACE RECOGNITION] Camera found: id={camera_id}, organization_id={camera.organization_id}")
@@ -402,7 +451,7 @@ async def detect_frame(
                         # Prepare violation data
                         violation_data = schemas.ViolationCreate(
                             camera_id=camera_id,
-                            domain_id=domain_id,
+                            domain_id=actual_domain_id,  # Use camera's domain, not request parameter
                             person_bbox=bbox,
                             detected_ppe=normalized_detected,
                             missing_ppe=missing_ppe,
@@ -433,10 +482,7 @@ async def detect_frame(
                                 "camera_id": violation.camera_id,
                                 "domain_id": violation.domain_id,
                                 "severity": violation.severity.value if hasattr(violation.severity, 'value') else str(violation.severity),
-                                "missing_ppe": [
-                                    {"type": ppe.type, "name": ppe.name} 
-                                    for ppe in violation.missing_ppe
-                                ] if hasattr(violation, 'missing_ppe') else missing_ppe,
+                                "missing_ppe": missing_ppe,  # Use the already-prepared missing_ppe list
                                 "timestamp": violation.timestamp.isoformat() if hasattr(violation.timestamp, 'isoformat') else str(violation.timestamp),
                                 "snapshot_path": violation.snapshot_path,
                                 "video_path": violation.video_path,
@@ -455,7 +501,7 @@ async def detect_frame(
                 else:
                     logger.warning(
                         f"[VIOLATION SKIP] Skipping violation save: "
-                        f"camera_id={camera_id}, domain_id={domain_id} "
+                        f"camera_id={camera_id}, actual_domain_id={actual_domain_id} "
                         f"(both must be > 0)"
                     )
 

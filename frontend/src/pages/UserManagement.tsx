@@ -103,32 +103,7 @@ export default function UserManagement() {
         total: response.total,
         users: response.items.map(u => ({ id: u.id, email: u.email, organization_id: u.organization_id }))
       })
-      
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/61aff5a8-2abc-427c-9b0c-e65f708f0829', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          location: 'frontend/src/pages/UserManagement.tsx:100',
-          message: 'Loaded users with domains',
-          data: {
-            usersCount: response.items.length,
-            users: response.items.map(u => ({
-              id: u.id,
-              email: u.email,
-              domainsCount: u.domains?.length || 0,
-              domainsIds: u.domains?.map(d => d.id) || [],
-              hasDomains: !!u.domains
-            }))
-          },
-          timestamp: Date.now(),
-          sessionId: 'debug-session',
-          runId: 'run1',
-          hypothesisId: 'B'
-        })
-      }).catch(() => {});
-      // #endregion
-      
+
       setUsers(response.items)
       setTotalUsers(response.total)
       
@@ -1002,31 +977,6 @@ export default function UserManagement() {
                         </td>
                         <td className="px-6 py-4">
                         <div className="flex flex-col gap-1">
-                          {/* #region agent log */}
-                          {(() => {
-                            fetch('http://127.0.0.1:7242/ingest/61aff5a8-2abc-427c-9b0c-e65f708f0829', {
-                              method: 'POST',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({
-                                location: 'frontend/src/pages/UserManagement.tsx:959',
-                                message: 'Rendering user domains',
-                                data: {
-                                  userId: user.id,
-                                  userEmail: user.email,
-                                  domainsCount: user.domains?.length || 0,
-                                  domainsIds: user.domains?.map(d => d.id) || [],
-                                  hasDomains: !!user.domains,
-                                  domainsUndefined: user.domains === undefined
-                                },
-                                timestamp: Date.now(),
-                                sessionId: 'debug-session',
-                                runId: 'run1',
-                                hypothesisId: 'C'
-                              })
-                            }).catch(() => {});
-                            return null;
-                          })()}
-                          {/* #endregion */}
                           {user.domains && user.domains.length > 0 ? (
                             <div className="flex flex-col gap-1">
                               <span className="text-xs text-gray-500">

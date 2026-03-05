@@ -96,7 +96,27 @@ async def startup_event():
     except Exception as e:
         logger.error(f"Failed to start notification scheduler: {str(e)}", exc_info=True)
 
-    # TODO: Load ML models
+    # Initialize PPE detection model registry
+    # NOTE: Model registry is auto-initialized in model_registry.py
+    # All domains use best.pt with different compliance rules from database
+    try:
+        from backend.ml_engine.model_registry import get_registry
+        registry = get_registry()
+        logger.info("✓ Model registry initialized (all domains use best.pt)")
+    except Exception as e:
+        logger.error(f"Failed to initialize model registry: {str(e)}", exc_info=True)
+
+    # Ensure default admin user exists
+    try:
+        from backend.services.user_service import UserService
+
+        async with AsyncSessionLocal() as db:
+            user_service = UserService(db)
+            admin = await user_service.ensure_default_admin()
+            if admin:
+                logger.info(f"✓ Default admin user ensured: {admin.email}")
+    except Exception as e:
+        logger.warning(f"Failed to ensure default admin: {str(e)}")
 
 
 @app.on_event("shutdown")

@@ -27,33 +27,33 @@ class PersonTracker:
 
     def __init__(
         self,
-        track_thresh: float = 0.25,
-        track_buffer: int = 30,
-        match_thresh: float = 0.8,
+        track_activation_threshold: float = 0.25,
+        lost_track_buffer: int = 30,
+        minimum_matching_threshold: float = 0.8,
         frame_rate: int = 30
     ):
         """
         Initialize person tracker
 
         Args:
-            track_thresh: Detection confidence threshold for tracking
-            track_buffer: Number of frames to keep lost tracks
-            match_thresh: IOU threshold for matching detections to tracks
+            track_activation_threshold: Detection confidence threshold for tracking
+            lost_track_buffer: Number of frames to keep lost tracks
+            minimum_matching_threshold: IOU threshold for matching detections to tracks
             frame_rate: Video frame rate (affects track lifetime)
         """
         self.tracker = sv.ByteTrack(
-            track_thresh=track_thresh,
-            track_buffer=track_buffer,
-            match_thresh=match_thresh,
+            track_activation_threshold=track_activation_threshold,
+            lost_track_buffer=lost_track_buffer,
+            minimum_matching_threshold=minimum_matching_threshold,
             frame_rate=frame_rate
         )
 
         self.frame_count = 0
 
         logger.info("PersonTracker initialized (ByteTrack)")
-        logger.info(f"Track threshold: {track_thresh}")
-        logger.info(f"Track buffer: {track_buffer} frames")
-        logger.info(f"Match threshold: {match_thresh}")
+        logger.info(f"Track activation threshold: {track_activation_threshold}")
+        logger.info(f"Lost track buffer: {lost_track_buffer} frames")
+        logger.info(f"Minimum matching threshold: {minimum_matching_threshold}")
 
     def update(self, detections: List[Dict]) -> List[Dict]:
         """

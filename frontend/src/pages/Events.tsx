@@ -37,6 +37,27 @@ import toast from 'react-hot-toast'
 type ViolationStatus = 'open' | 'in_progress' | 'closed' | 'false_positive'
 type ViolationSeverity = 'critical' | 'high' | 'medium' | 'low'
 
+// Global PPE display name mapper
+function getPPEDisplayName(type: string): string {
+  const names: Record<string, string> = {
+    // Best.pt model class names
+    head_helmet: 'Hard Hat',
+    vest: 'Safety Vest',
+    boots: 'Safety Boots',
+    glasses: 'Safety Glasses',
+    hand_glove: 'Gloves',
+    'Ear-protection': 'Ear Protection',
+    face_mask: 'Face Mask',
+    // Legacy/alternative names
+    hard_hat: 'Hard Hat',
+    safety_vest: 'Safety Vest',
+    gloves: 'Gloves',
+    safety_boots: 'Safety Boots',
+    safety_glasses: 'Safety Glasses',
+  }
+  return names[type] || type
+}
+
 export default function Events() {
   const [violations, setViolations] = useState<Violation[]>([])
   const [domains, setDomains] = useState<Domain[]>([])
@@ -253,16 +274,6 @@ export default function Events() {
                 <button
                   onClick={() => {
                     try {
-                      const getPPEDisplayName = (type: string) => {
-                        const names: Record<string, string> = {
-                          hard_hat: 'Hard Hat',
-                          safety_vest: 'Safety Vest',
-                          gloves: 'Gloves',
-                          safety_boots: 'Safety Boots',
-                          safety_glasses: 'Safety Glasses',
-                        }
-                        return names[type] || type
-                      }
 
                       const exportData = filteredViolations.map(v => {
                         const camera = cameras.find(c => c.id === v.camera_id)
@@ -305,16 +316,6 @@ export default function Events() {
                 <button
                   onClick={() => {
                     try {
-                      const getPPEDisplayName = (type: string) => {
-                        const names: Record<string, string> = {
-                          hard_hat: 'Hard Hat',
-                          safety_vest: 'Safety Vest',
-                          gloves: 'Gloves',
-                          safety_boots: 'Safety Boots',
-                          safety_glasses: 'Safety Glasses',
-                        }
-                        return names[type] || type
-                      }
 
                       const exportData = filteredViolations.map(v => {
                         const camera = cameras.find(c => c.id === v.camera_id)
@@ -512,9 +513,7 @@ export default function Events() {
                               key={idx}
                               className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800"
                             >
-                              {ppe.type === 'hard_hat' ? 'Hard Hat' : 
-                               ppe.type === 'safety_vest' ? 'Vest' : 
-                               ppe.type}
+                              {getPPEDisplayName(ppe.type)}
                             </span>
                           ))}
                           {violation.missing_ppe.length > 2 && (

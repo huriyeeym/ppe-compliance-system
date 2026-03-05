@@ -129,29 +129,7 @@ async def list_users(
             # Special handling for System Admin (user_id=1 or email=admin@safevision.io)
             # System Admin should always show organization domains, not user_domains table entries
             is_system_admin = user.id == 1 or user.email == "admin@safevision.io"
-            
-            # #region agent log
-            import json
-            with open(r'c:\Users\90545\Desktop\MASAUSTU\Projects\PPE\.cursor\debug.log', 'a', encoding='utf-8') as f:
-                f.write(json.dumps({
-                    'sessionId': 'debug-session',
-                    'runId': 'run1',
-                    'hypothesisId': 'F',
-                    'location': 'backend/api/users.py:127',
-                    'message': 'User domains check',
-                    'data': {
-                        'userId': user.id,
-                        'userEmail': user.email,
-                        'isSystemAdmin': is_system_admin,
-                        'hasDomainsAttr': hasattr(user, 'domains'),
-                        'domainsCount': len(user.domains) if hasattr(user, 'domains') and user.domains else 0,
-                        'domainsIds': [d.id for d in user.domains] if hasattr(user, 'domains') and user.domains else [],
-                        'organizationId': user.organization_id
-                    },
-                    'timestamp': int(__import__('time').time() * 1000)
-                }) + '\n')
-            # #endregion
-            
+
             if is_system_admin and user.organization_id:
                 # For System Admin, use organization domains instead of user_domains table
                 org_domains = domains_by_org.get(user.organization_id, [])
@@ -166,22 +144,6 @@ async def list_users(
                         model_status=getattr(domain, 'model_status', 'not_loaded'),
                         model_last_updated=getattr(domain, 'model_last_updated', None)
                     ))
-                # #region agent log
-                with open(r'c:\Users\90545\Desktop\MASAUSTU\Projects\PPE\.cursor\debug.log', 'a', encoding='utf-8') as f:
-                    f.write(json.dumps({
-                        'sessionId': 'debug-session',
-                        'runId': 'run1',
-                        'hypothesisId': 'F',
-                        'location': 'backend/api/users.py:155',
-                        'message': 'System Admin using org domains',
-                        'data': {
-                            'userId': user.id,
-                            'orgDomainsCount': len(org_domains),
-                            'orgDomainsIds': [d.id for d in org_domains]
-                        },
-                        'timestamp': int(__import__('time').time() * 1000)
-                    }) + '\n')
-                # #endregion
             elif user.domains:
                 # For other users, use user's actual domains (from user_domains table)
                 for domain in user.domains:
@@ -195,25 +157,6 @@ async def list_users(
                         model_status=getattr(domain, 'model_status', 'not_loaded'),
                         model_last_updated=getattr(domain, 'model_last_updated', None)
                     ))
-            # #region agent log
-            with open(r'c:\Users\90545\Desktop\MASAUSTU\Projects\PPE\.cursor\debug.log', 'a', encoding='utf-8') as f:
-                f.write(json.dumps({
-                    'sessionId': 'debug-session',
-                    'runId': 'run1',
-                    'hypothesisId': 'E',
-                    'location': 'backend/api/users.py:165',
-                    'message': 'User response domains final',
-                    'data': {
-                        'userId': user.id,
-                        'userEmail': user.email,
-                        'userDomainsCount': len(user_domains),
-                        'userDomainsIds': [d.id for d in user_domains],
-                        'organizationId': user.organization_id,
-                        'orgDomainsCount': len(domains_by_org.get(user.organization_id, [])) if user.organization_id else 0
-                    },
-                    'timestamp': int(__import__('time').time() * 1000)
-                }) + '\n')
-            # #endregion
             
             user_response = db_schemas.UserResponse(
                 id=user.id,

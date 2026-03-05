@@ -5,8 +5,6 @@ import { domainService, type Domain } from '../lib/api/services/domainService'
 import { cameraService, type Camera } from '../lib/api/services/cameraService'
 import { useAuth } from '../context/AuthContext'
 import { logger } from '../lib/utils/logger'
-import { showViolationAlert, showSuccessAlert } from '../components/alerts/ViolationAlert'
-import { audioAlert } from '../lib/utils/audioAlert'
 import MultiSelect from '../components/common/MultiSelect'
 
 // Helper function to get domain icon by type
@@ -241,10 +239,10 @@ export default function LiveCamera() {
           violations: current.detectionStats.violations + newViolations,
           totalDetections: currentUniquePersons.size,
           hardHatMissing: current.detectionStats.hardHatMissing + violationDetections.filter(
-            d => !d.ppe_status.hard_hat.detected
+            d => d.missing_ppe?.some(ppe => ppe === 'head_helmet' || ppe === 'hard_hat')
           ).length,
           vestMissing: current.detectionStats.vestMissing + violationDetections.filter(
-            d => !d.ppe_status.safety_vest.detected
+            d => d.missing_ppe?.some(ppe => ppe === 'vest' || ppe === 'safety_vest')
           ).length,
           uniquePersonIds: Array.from(currentUniquePersons)
         }
@@ -253,50 +251,14 @@ export default function LiveCamera() {
       return updated
     })
 
-    // Show violation alerts
+    // Log violation recording (notifications are handled by NotificationCenter via WebSocket)
     for (const recordedViolation of result.violations_recorded) {
-      try {
-        const detection = result.detections.find(
-          d => d.track_id === recordedViolation.track_id
-        )
-
-        if (!detection) {
-          logger.warn('Could not find detection for recorded violation', recordedViolation)
-          continue
-        }
-
-        const missing_ppe: string[] = []
-        const missing_ppe_labels: string[] = []
-        if (!detection.ppe_status.hard_hat.detected) {
-          missing_ppe.push('hard_hat')
-          missing_ppe_labels.push('Hard Hat')
-        }
-        if (!detection.ppe_status.safety_vest.detected) {
-          missing_ppe.push('safety_vest')
-          missing_ppe_labels.push('Safety Vest')
-        }
-
-        const severity: 'low' | 'medium' | 'high' | 'critical' =
-          missing_ppe.length >= 2 ? 'critical' :
-          missing_ppe.length === 1 && missing_ppe.includes('hard_hat') ? 'high' : 'medium'
-
-        showViolationAlert({
-          track_id: recordedViolation.track_id,
-          reason: `${streamState.camera.name} - ${recordedViolation.reason}`,
-          missing_ppe: missing_ppe_labels,
-          severity,
-          timestamp: new Date().toISOString(),
-        })
-
-        logger.info('Violation recorded by backend', {
-          cameraId,
-          track_id: recordedViolation.track_id,
-          reason: recordedViolation.reason,
-          snapshot_path: recordedViolation.snapshot_path
-        })
-      } catch (err) {
-        logger.error('Failed to process violation', err)
-      }
+      logger.info('Violation recorded by backend', {
+        cameraId,
+        track_id: recordedViolation.track_id,
+        reason: recordedViolation.reason,
+        snapshot_path: recordedViolation.snapshot_path
+      })
     }
   }, [cameraStreams])
 

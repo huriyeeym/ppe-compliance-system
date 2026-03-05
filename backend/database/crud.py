@@ -173,6 +173,7 @@ async def get_domain_rules(db: AsyncSession, domain_id: int) -> List[DomainPPERu
     """Get all PPE rules for a specific domain"""
     result = await db.execute(
         select(DomainPPERule)
+        .options(selectinload(DomainPPERule.ppe_type))  # Eager load ppe_type
         .where(DomainPPERule.domain_id == domain_id)
         .order_by(DomainPPERule.priority)
     )
@@ -211,19 +212,19 @@ async def update_domain_rule(db: AsyncSession, rule_id: int, rule: DomainPPERule
 
 async def get_cameras(db: AsyncSession, skip: int = 0, limit: int = 100, organization_id: Optional[int] = None) -> List[Camera]:
     """
-    Get all cameras with pagination
+    Get all active cameras with pagination
     Args:
         db: Database session
         skip: Number of records to skip
         limit: Maximum number of records
         organization_id: Organization ID for multi-tenant filtering (required for data isolation)
     """
-    query = select(Camera)
-    
+    query = select(Camera).where(Camera.is_active == True)
+
     # CRITICAL: Always filter by organization_id for data isolation
     if organization_id is not None:
         query = query.where(Camera.organization_id == organization_id)
-    
+
     query = query.offset(skip).limit(limit).order_by(Camera.id)
     result = await db.execute(query)
     return result.scalars().all()
@@ -249,18 +250,18 @@ async def get_camera_by_id(db: AsyncSession, camera_id: int, organization_id: Op
 
 async def get_cameras_by_domain(db: AsyncSession, domain_id: int, organization_id: Optional[int] = None) -> List[Camera]:
     """
-    Get all cameras for a specific domain
+    Get all active cameras for a specific domain
     Args:
         db: Database session
         domain_id: Domain ID
         organization_id: Organization ID for multi-tenant filtering (required for data isolation)
     """
-    query = select(Camera).where(Camera.domain_id == domain_id)
-    
+    query = select(Camera).where(Camera.domain_id == domain_id, Camera.is_active == True)
+
     # CRITICAL: Always filter by organization_id for data isolation
     if organization_id is not None:
         query = query.where(Camera.organization_id == organization_id)
-    
+
     result = await db.execute(query)
     return result.scalars().all()
 
@@ -301,13 +302,15 @@ async def update_camera(db: AsyncSession, camera_id: int, camera: CameraUpdate) 
 
 
 async def delete_camera(db: AsyncSession, camera_id: int) -> bool:
-    """Delete a camera"""
+    """Soft delete a camera (set is_active to False)"""
     db_camera = await get_camera_by_id(db, camera_id)
     if not db_camera:
         return False
-    
-    await db.delete(db_camera)
+
+    # Soft delete: set is_active to False instead of deleting
+    db_camera.is_active = False
     await db.commit()
+    await db.refresh(db_camera)
     return True
 
 

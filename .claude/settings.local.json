@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls:*)",
+      "Bash(test:*)",
+      "Bash(python -c \"\nimport urllib.request\nimport os\nfrom pathlib import Path\n\nmodel_url = ''https://github.com/hafizqaim/Workspace-Safety-Detection-using-YOLOv8/releases/download/v1.0.0/best.pt''\nmodel_path = Path\\(''data/models/construction/workspace_safety_yolov8_best.pt''\\)\n\nprint\\(f''Downloading YOLOv8 model from {model_url}...''\\)\nprint\\(''This may take a few minutes...''\\)\n\nurllib.request.urlretrieve\\(model_url, model_path\\)\nprint\\(f''Model downloaded to: {model_path}''\\)\nprint\\(f''File size: {model_path.stat\\(\\).st_size / \\(1024*1024\\):.2f} MB''\\)\n\")",
+      "Bash(python scripts/init_database.py:*)",
+      "Bash(pip show:*)",
+      "Bash(pip install:*)",
+      "Bash(timeout 10 python:*)",
+      "Bash(python -c:*)",
+      "Bash(curl:*)",
+      "Bash(set PYTHONPATH=%CD%)",
+      "Bash(python -m uvicorn:*)",
+      "Bash(timeout /t 5 /nobreak)",
+      "Bash(npm run dev:*)",
+      "Bash(ping:*)",
+      "Bash(dir:*)",
+      "Bash(findstr:*)",
+      "Bash(pkill:*)",
+      "Bash(timeout 30 bash:*)",
+      "Bash(tasklist:*)",
+      "Bash(taskkill /F /PID 34076)",
+      "Bash(taskkill //F //PID 34076)",
+      "Bash(taskkill //F //PID 32524)"
+    ]
+  }
+}

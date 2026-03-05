@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
-import { Bell, X, Eye, ExternalLink } from 'lucide-react'
+import { Bell, X, Eye, ExternalLink, BellOff, Volume2, VolumeX } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { violationService, type Violation } from '../../lib/api/services'
 import { useDomain } from '../../context/DomainContext'
 import { logger } from '../../lib/utils/logger'
 import { useWebSocket } from '../../lib/websocket/useWebSocket'
+import { audioAlert } from '../../lib/utils/audioAlert'
 
 interface NotificationItem {
   id: number
@@ -20,12 +21,37 @@ export default function NotificationCenter() {
   const [isOpen, setIsOpen] = useState(false)
   const [notifications, setNotifications] = useState<NotificationItem[]>([])
   const [unreadCount, setUnreadCount] = useState(0)
+  const [notificationsEnabled, setNotificationsEnabled] = useState(() => {
+    // Load from localStorage
+    const saved = localStorage.getItem('notificationsEnabled')
+    return saved !== null ? JSON.parse(saved) : true
+  })
+  const [soundEnabled, setSoundEnabled] = useState(() => {
+    // Load from localStorage
+    const saved = localStorage.getItem('soundEnabled')
+    return saved !== null ? JSON.parse(saved) : true
+  })
   const dropdownRef = useRef<HTMLDivElement>(null)
   const wsConnectedRef = useRef(false) // Track wsConnected state
+  const shownViolationsRef = useRef<Set<number>>(new Set()) // Track shown violations to prevent duplicates
 
   // ✅ WebSocket for real-time violation notifications
   // Use useCallback to stabilize the onViolation callback
   const handleViolation = useCallback((violation: any) => {
+    // Check if notifications are disabled
+    if (!notificationsEnabled) {
+      return
+    }
+
+    // Check if we've already shown this violation (prevent duplicates)
+    if (shownViolationsRef.current.has(violation.id)) {
+      logger.debug(`Duplicate violation ${violation.id} ignored`)
+      return
+    }
+
+    // Mark as shown
+    shownViolationsRef.current.add(violation.id)
+
     // Add new violation notification in real-time
     const newNotification: NotificationItem = {
       id: violation.id,
@@ -35,18 +61,23 @@ export default function NotificationCenter() {
       read: false,
       violation: violation as any, // Type assertion for compatibility
     }
-    
+
     setNotifications(prev => {
-      // Avoid duplicates
+      // Avoid duplicates in state as well
       if (prev.some(n => n.id === violation.id)) {
         return prev
       }
       // Add to beginning and keep only last 20
       return [newNotification, ...prev].slice(0, 20)
     })
-    
+
     setUnreadCount(prev => prev + 1)
-    
+
+    // Play sound if enabled
+    if (soundEnabled) {
+      audioAlert.playAlert(violation.severity)
+    }
+
     // Show browser notification if permission granted
     if ('Notification' in window && Notification.permission === 'granted') {
       new Notification('PPE Violation Detected', {
@@ -54,7 +85,7 @@ export default function NotificationCenter() {
         icon: '/favicon.ico',
       })
     }
-  }, [])
+  }, [notificationsEnabled, soundEnabled])
 
   // Stabilize domainIds array to prevent unnecessary reconnections
   const domainIds = useMemo(() => {
@@ -167,6 +198,23 @@ export default function NotificationCenter() {
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
   }
 
+  // Save preferences to localStorage
+  useEffect(() => {
+    localStorage.setItem('notificationsEnabled', JSON.stringify(notificationsEnabled))
+  }, [notificationsEnabled])
+
+  useEffect(() => {
+    localStorage.setItem('soundEnabled', JSON.stringify(soundEnabled))
+  }, [soundEnabled])
+
+  const toggleNotifications = () => {
+    setNotificationsEnabled(prev => !prev)
+  }
+
+  const toggleSound = () => {
+    setSoundEnabled(prev => !prev)
+  }
+
   return (
     <div className="relative" ref={dropdownRef}>
       {/* Bell Icon with Badge */}
@@ -187,19 +235,58 @@ export default function NotificationCenter() {
       {isOpen && (
         <div className="absolute right-0 mt-2 w-96 bg-white rounded-lg shadow-lg border border-gray-200 z-50 max-h-[600px] flex flex-col">
           {/* Header */}
-          <div className="flex items-center justify-between p-4 border-b border-gray-200">
-            <div>
-              <h3 className="text-sm font-semibold text-gray-900">Notifications</h3>
-              <p className="text-xs text-gray-500 mt-0.5">
-                {unreadCount} unread {unreadCount === 1 ? 'notification' : 'notifications'}
-              </p>
+          <div className="p-4 border-b border-gray-200">
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <h3 className="text-sm font-semibold text-gray-900">Notifications</h3>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  {unreadCount} unread {unreadCount === 1 ? 'notification' : 'notifications'}
+                </p>
+              </div>
+              <button
+                onClick={() => setIsOpen(false)}
+                className="p-1 rounded hover:bg-gray-100 transition-colors"
+              >
+                <X className="w-4 h-4 text-gray-500" />
+              </button>
             </div>
-            <button
-              onClick={() => setIsOpen(false)}
-              className="p-1 rounded hover:bg-gray-100 transition-colors"
-            >
-              <X className="w-4 h-4 text-gray-500" />
-            </button>
+
+            {/* Toggle Controls */}
+            <div className="flex items-center gap-2 pt-2 border-t border-gray-100">
+              <button
+                onClick={toggleNotifications}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                  notificationsEnabled
+                    ? 'bg-blue-50 text-blue-600 hover:bg-blue-100'
+                    : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                }`}
+                title={notificationsEnabled ? 'Disable notifications' : 'Enable notifications'}
+              >
+                {notificationsEnabled ? (
+                  <Bell className="w-3.5 h-3.5" />
+                ) : (
+                  <BellOff className="w-3.5 h-3.5" />
+                )}
+                {notificationsEnabled ? 'Enabled' : 'Disabled'}
+              </button>
+
+              <button
+                onClick={toggleSound}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                  soundEnabled
+                    ? 'bg-green-50 text-green-600 hover:bg-green-100'
+                    : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                }`}
+                title={soundEnabled ? 'Mute sound' : 'Unmute sound'}
+              >
+                {soundEnabled ? (
+                  <Volume2 className="w-3.5 h-3.5" />
+                ) : (
+                  <VolumeX className="w-3.5 h-3.5" />
+                )}
+                {soundEnabled ? 'Sound On' : 'Sound Off'}
+              </button>
+            </div>
           </div>
 
           {/* Notifications List */}

@@ -35,72 +35,82 @@ class ModelRegistry:
         Returns:
             Dictionary mapping domain types to model info
         """
-        # Enhanced registry with model metadata
-        # Based on comprehensive research in docs/MULTI_DOMAIN_MODEL_RESEARCH.md
+        # CRITICAL: All domains use best.pt (comprehensive PPE detection model)
+        # best.pt detects: head_helmet, vest, boots, hand_glove, glasses, face_mask, Ear-protection
+        # Domain differentiation is done via required_ppe rules in database (seed_data.py)
+        #
+        # Construction: requires head_helmet, vest
+        # Manufacturing: requires glasses, Ear-protection, hand_glove
+        # Mining: requires head_helmet, boots, etc.
+        #
+        # This approach is a MICROSERVICE PATTERN where:
+        # - Same detection model (best.pt)
+        # - Different compliance rules per domain (from database)
+        # - Each domain gets its own detector instance (isolated tracking, smoothing)
+
         registry = {
             "construction": {
-                "model_file": "workspace_safety_yolov8_best.pt",  # Workspace Safety YOLOv8 - Best for construction
-                "fallback": "yolov8n.pt",
+                "model_file": "best.pt",  # Comprehensive PPE model
+                "fallback": None,  # No fallback - best.pt must exist
                 "classes": [
-                    "Barefoots", "Ear-protection", "Harness", "No_Ear-Protection", "No_Glasses",
-                    "Sandals", "boots", "face_mask", "face_nomask", "glasses", "hand_glove",
-                    "hand_noglove", "head_helmet", "head_nohelmet", "person", "shoes", "vest"
+                    "head_helmet", "vest", "boots", "hand_glove", "glasses",
+                    "face_mask", "Ear-protection", "protective_suit"
                 ],
-                "subdirectory": "construction"
+                "subdirectory": ""  # Root directory
             },
             "manufacturing": {
-                "model_file": "workspace_safety_yolov8_best.pt",  # Workspace Safety YOLOv8 - Comprehensive (17 classes)
-                "fallback": "yolov8n.pt",
+                "model_file": "best.pt",  # Same model, different required_ppe rules
+                "fallback": None,
                 "classes": [
-                    "Barefoots", "Ear-protection", "Harness", "No_Ear-Protection", "No_Glasses",
-                    "Sandals", "boots", "face_mask", "face_nomask", "glasses", "hand_glove",
-                    "hand_noglove", "head_helmet", "head_nohelmet", "person", "shoes", "vest"
+                    "head_helmet", "vest", "boots", "hand_glove", "glasses",
+                    "face_mask", "Ear-protection", "protective_suit"
                 ],
-                "subdirectory": "manufacturing"
+                "subdirectory": ""
             },
             "mining": {
-                "model_file": "workspace_safety_yolov8_best.pt",  # Workspace Safety YOLOv8 - Best for mining
-                "fallback": "yolov8n.pt",
+                "model_file": "best.pt",  # Same model, different required_ppe rules
+                "fallback": None,
                 "classes": [
-                    "Barefoots", "Ear-protection", "Harness", "No_Ear-Protection", "No_Glasses",
-                    "Sandals", "boots", "face_mask", "face_nomask", "glasses", "hand_glove",
-                    "hand_noglove", "head_helmet", "head_nohelmet", "person", "shoes", "vest"
+                    "head_helmet", "vest", "boots", "hand_glove", "glasses",
+                    "face_mask", "Ear-protection", "protective_suit"
                 ],
-                "subdirectory": "mining"
+                "subdirectory": ""
             },
             "warehouse": {
-                "model_file": "workspace_safety_yolov8_best.pt",  # Workspace Safety YOLOv8 - Best for warehouse
-                "fallback": "yolov8n.pt",
+                "model_file": "best.pt",  # Same model, different required_ppe rules
+                "fallback": None,
                 "classes": [
-                    "Barefoots", "Ear-protection", "Harness", "No_Ear-Protection", "No_Glasses",
-                    "Sandals", "boots", "face_mask", "face_nomask", "glasses", "hand_glove",
-                    "hand_noglove", "head_helmet", "head_nohelmet", "person", "shoes", "vest"
+                    "head_helmet", "vest", "boots", "hand_glove", "glasses",
+                    "face_mask", "Ear-protection", "protective_suit"
                 ],
-                "subdirectory": "warehouse"
+                "subdirectory": ""
             },
             "healthcare": {
-                "model_file": "ppe-detection-healthcare-hf.pt",
-                "fallback": "keremberke/yolov8m-protective-equipment-detection",  # Hugging Face model ID
+                "model_file": "best.pt",  # Same model, different required_ppe rules
+                "fallback": None,
                 "classes": [
-                    "glove", "no_glove", "goggles", "no_goggles", "helmet", "no_helmet",
-                    "mask", "no_mask", "no_shoes", "shoes"
+                    "head_helmet", "vest", "boots", "hand_glove", "glasses",
+                    "face_mask", "Ear-protection", "protective_suit"
                 ],
-                "subdirectory": "healthcare"
+                "subdirectory": ""
             },
             "food_production": {
-                "model_file": "ppe-detection-food-hf.pt",
-                "fallback": "keremberke/yolov8m-protective-equipment-detection",  # Hugging Face model ID
+                "model_file": "best.pt",  # Same model, different required_ppe rules
+                "fallback": None,
                 "classes": [
-                    "glove", "no_glove", "goggles", "no_goggles", "helmet", "no_helmet",
-                    "mask", "no_mask", "no_shoes", "shoes"
+                    "head_helmet", "vest", "boots", "hand_glove", "glasses",
+                    "face_mask", "Ear-protection", "protective_suit"
                 ],
-                "subdirectory": "food_industry"
+                "subdirectory": ""
             },
             "laboratory": {
-                "model_file": "lab-safety-custom.pt",
-                "fallback": "yolov8n.pt",
-                "classes": ["lab coat", "safety glasses", "gloves", "closed-toe shoes"],
-                "subdirectory": "laboratory"
+                "model_file": "best.pt",  # Same model, different required_ppe rules
+                "fallback": None,
+                "classes": [
+                    "head_helmet", "vest", "boots", "hand_glove", "glasses",
+                    "face_mask", "Ear-protection", "protective_suit"
+                ],
+                "subdirectory": ""
             }
         }
 
@@ -123,44 +133,59 @@ class ModelRegistry:
 
         domain_info = self._registry[domain_type]
         model_file = domain_info["model_file"]
-        fallback_file = domain_info.get("fallback", "yolov8n.pt")
+        fallback_file = domain_info.get("fallback")  # Can be None (no fallback)
         subdirectory = domain_info.get("subdirectory", "")
 
-        # Check domain-specific subdirectory first
+        # Check if model_file is an absolute path first
+        from pathlib import Path
+        if Path(model_file).is_absolute() and Path(model_file).exists():
+            logger.info(f"Using model from absolute path: {model_file}")
+            return str(Path(model_file).absolute())
+
+        # Check project root (for best.pt)
+        project_root = Path(__file__).parent.parent.parent  # backend/ml_engine -> backend -> project_root
+        root_model = project_root / model_file
+        if root_model.exists():
+            logger.info(f"Using model from project root: {root_model}")
+            return str(root_model.absolute())
+
+        # Check domain-specific subdirectory in models dir
         if subdirectory:
             domain_model_path = self.models_dir / subdirectory / model_file
             if domain_model_path.exists():
                 logger.info(f"Using domain-specific model: {domain_model_path}")
-                return domain_model_path
+                return str(domain_model_path)
 
         # Check models root directory
         root_model_path = self.models_dir / model_file
         if root_model_path.exists():
-            logger.info(f"Using model from root: {root_model_path}")
-            return root_model_path
+            logger.info(f"Using model from models dir: {root_model_path}")
+            return str(root_model_path)
 
-        # Try fallback model
-        fallback_path = self.models_dir / fallback_file
-        if fallback_path.exists():
-            logger.warning(f"Primary model not found, using fallback: {fallback_path}")
-            return fallback_path
+        # Try fallback model (only if fallback is not None)
+        if fallback_file:
+            fallback_path = self.models_dir / fallback_file
+            if fallback_path.exists():
+                logger.warning(f"Primary model not found, using fallback: {fallback_path}")
+                return str(fallback_path)
 
-        # Check if fallback is a Hugging Face model ID (contains '/')
-        if '/' in fallback_file:
-            logger.info(f"Using Hugging Face model: {fallback_file}")
-            return fallback_file  # Return Hugging Face model ID as string
-        
-        # Use YOLO pre-trained (will be downloaded automatically)
-        if fallback_file.startswith("yolov8") or fallback_file.startswith("yolo11"):
-            logger.info(f"Using YOLOv8 pre-trained model: {fallback_file}")
-            return fallback_file  # Return string, YOLO will download
+            # Check if fallback is a Hugging Face model ID (contains '/')
+            if '/' in fallback_file:
+                logger.info(f"Using Hugging Face model: {fallback_file}")
+                return fallback_file  # Return Hugging Face model ID as string
 
-        logger.error(f"No model found for domain: {domain_type}")
+            # Use YOLO pre-trained (will be downloaded automatically)
+            if fallback_file.startswith("yolov8") or fallback_file.startswith("yolo11"):
+                logger.info(f"Using YOLOv8 pre-trained model: {fallback_file}")
+                return fallback_file  # Return string, YOLO will download
+
+        logger.error(f"No model found for domain: {domain_type}, model_file={model_file}, no fallback available")
+        logger.error(f"Searched locations: project_root={project_root / model_file}, models_dir={self.models_dir / model_file}")
         return None
     
     def register_model(self, domain_type: str, model_file: str, classes: list = None, subdirectory: str = None):
         """
-        Register a new model for a domain
+        Register a new model for a domain (ALWAYS OVERWRITES existing)
 
         Args:
             domain_type: Domain type
@@ -168,16 +193,21 @@ class ModelRegistry:
             classes: List of class names the model can detect (optional)
             subdirectory: Subdirectory within models_dir (optional)
         """
+        # CRITICAL FIX: Always create/overwrite the domain entry
+        # This allows main.py to override default HuggingFace models with best.pt
         if domain_type not in self._registry:
             self._registry[domain_type] = {}
 
+        # Always update model_file (override existing)
         self._registry[domain_type]["model_file"] = model_file
+        self._registry[domain_type]["fallback"] = None  # Clear fallback to prevent yolov8n.pt usage
+
         if classes:
             self._registry[domain_type]["classes"] = classes
         if subdirectory:
             self._registry[domain_type]["subdirectory"] = subdirectory
 
-        logger.info(f"Registered model '{model_file}' for domain '{domain_type}'")
+        logger.info(f"Registered model '{model_file}' for domain '{domain_type}' (OVERWRITE)")
     
     def list_domains(self) -> Dict[str, Dict]:
         """Get all registered domain → model mappings"""

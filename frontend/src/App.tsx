@@ -9,6 +9,7 @@ import Report from './pages/Report'
 import Analytics from './pages/Analytics'
 import Configure from './pages/Configure'
 import UserManagement from './pages/UserManagement'
+import CameraManagement from './pages/CameraManagement'
 import SystemSettings from './pages/SystemSettings'
 import OrganizationSettings from './pages/OrganizationSettings'
 import Login from './pages/Login'
@@ -71,6 +72,14 @@ function App() {
             element={
               <RequireAuth role="admin">
                 <UserManagement />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/cameras"
+            element={
+              <RequireAuth role="admin">
+                <CameraManagement />
               </RequireAuth>
             }
           />

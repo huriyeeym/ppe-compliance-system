@@ -166,11 +166,11 @@ export default function Report() {
     } finally {
       setLoading(false)
     }
-  }, [dateRange, selectedSeverity, selectedDomainId])
+  }, [dateRange, selectedSeverity, selectedDomainId, pagination.skip, pagination.limit])
 
   useEffect(() => {
     loadViolations()
-  }, [loadViolations, pagination.skip, pagination.limit])
+  }, [loadViolations])
 
   const getPPEDisplayName = (type: string) => {
     const names: Record<string, string> = {

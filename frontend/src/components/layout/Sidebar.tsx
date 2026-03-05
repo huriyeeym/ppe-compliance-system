@@ -1,19 +1,20 @@
 import { Link, useLocation } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { canAccessPage, canViewConfigure, isAdmin, type UserRole } from '../../lib/utils/permissions'
-import { 
-  LayoutDashboard, 
-  Video, 
-  FileText, 
-  BarChart3, 
-  Settings, 
-  Shield, 
+import {
+  LayoutDashboard,
+  Video,
+  FileText,
+  BarChart3,
+  Settings,
+  Shield,
   LogOut,
   User,
   AlertCircle,
   Globe,
   Users,
-  Building2
+  Building2,
+  Camera
 } from 'lucide-react'
 
 // Helper function to get role display name
@@ -53,6 +54,7 @@ export default function Sidebar() {
   if (user && isAdmin(user.role as UserRole)) {
     // Add divider before admin section
     filteredMenuItems.push({ path: '', label: '---', icon: Settings, pageKey: 'divider' })
+    filteredMenuItems.push({ path: '/cameras', label: 'Camera Management', icon: Camera, pageKey: 'cameras' })
     filteredMenuItems.push({ path: '/users', label: 'User Management', icon: Users, pageKey: 'users' })
     filteredMenuItems.push({ path: '/settings', label: 'System Settings', icon: Settings, pageKey: 'settings' })
     filteredMenuItems.push({ path: '/organization', label: 'Organization Settings', icon: Building2, pageKey: 'organization' })
