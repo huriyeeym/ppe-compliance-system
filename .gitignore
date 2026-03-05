@@ -111,9 +111,6 @@ Desktop.ini
 # ==========================================
 # DOCUMENTATION (PRIVATE - Kişisel notlar)
 # ==========================================
-# README.md hariç tüm .md dosyaları GitHub'a GİTMEZ
-*.md
-!README.md
 
 # ==========================================
 # MISC
